@@ -112,12 +112,12 @@ bys permno year: egen n_mons = count(month)
 	gen retA = ret_cumul^(12/n_mons) // compound to 12 months based on number
 								// of months already factored in (e.g. 6-month
 								// returns should be squared)
-	replace ret_cumul = ret_cumul - 1
+	replace ret_cumul = ret_cumul - 1 // want r not 1+r
 	replace retA = retA - 1
 	keep if month == max_mon // want annual observations
 	
-
 xtset permno year
+
 *======================================================================
 * NOW SAVE RESIDUALS FOR FIRM-YEAR ABNORMAL RETURNS DATASET
 *======================================================================
@@ -146,7 +146,6 @@ foreach model in CAPM FF3 Carhart4 Liq5 {
 
 	reg retA `rhs'
 		predict residM`x', residuals
-
 }
 
 foreach model in M1 M3 M4 M5 {
@@ -161,8 +160,14 @@ lab var residM3 "Residual from Fama-French 3-Factor Model"
 lab var residM4 "Residual from Carhart 4-Factor Model"
 lab var residM5 "Residual from 5-Factor Model w/ Liquidity"
 
-lab var win* "Residual in top 10% of residuals"
-lab var lose* "Residual in bottom 10% of residuals"
+lab var winM1 "Residual in top 10% of residuals"
+	lab var winM3 "Residual in top 10% of residuals"
+	lab var winM4 "Residual in top 10% of residuals"
+	lab var winM5 "Residual in top 10% of residuals"
+lab var loseM1 "Residual in bottom 10% of residuals"
+	lab var loseM3 "Residual in bottom 10% of residuals"
+	lab var loseM4 "Residual in bottom 10% of residuals"
+	lab var loseM5 "Residual in bottom 10% of residuals"
 
 keep permno year residM1 winM1 loseM1 residM3 winM3 loseM3 ///
 				 residM4 winM4 loseM4 residM5 winM5 loseM5
