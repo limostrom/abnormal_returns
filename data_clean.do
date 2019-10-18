@@ -119,3 +119,52 @@ bys permno year: egen n_mons = count(month)
 
 xtset permno year
 *======================================================================
+* NOW SAVE RESIDUALS FOR FIRM-YEAR ABNORMAL RETURNS DATASET
+*======================================================================
+*winsor retA, p(0.025) gen(retA_w)
+summ retA, d
+	drop if retA <= r(p1) | retA >= r(p99) // dropping top and bottom 1% of outlier returns
+
+foreach model in CAPM FF3 Carhart4 Liq5 {
+	if "`model'" == "CAPM" {
+		local rhs "mktrfA"
+		local x = 1
+	}
+	if "`model'" == "FF3" {
+		local rhs "mktrfA smbA hmlA"
+		local x = 3
+	}
+	if "`model'" == "Carhart4" {
+		local rhs "mktrfA smbA hmlA umdA"
+		local x = 4
+	}
+	if "`model'" == "Liq5" {
+		local rhs "mktrfA smbA hmlA umdA ps_vwfA if year <= 2017"
+			// liquidity only available up through 2017
+		local x = 5
+	}
+
+	reg retA `rhs'
+		predict residM`x', residuals
+
+}
+
+foreach model in M1 M3 M4 M5 {
+	qui summ resid`model', d
+	gen win`model' = (resid`model' >= r(p90)) // top 10% of alphas
+	qui summ resid`model', d
+	gen lose`model' = (resid`model' <= r(p10)) // bottom 10% of alphas
+}
+
+lab var residM1 "Residual from CAPM Model"
+lab var residM3 "Residual from Fama-French 3-Factor Model"
+lab var residM4 "Residual from Carhart 4-Factor Model"
+lab var residM5 "Residual from 5-Factor Model w/ Liquidity"
+
+lab var win* "Residual in top 10% of residuals"
+lab var lose* "Residual in bottom 10% of residuals"
+
+keep permno year residM1 winM1 loseM1 residM3 winM3 loseM3 ///
+				 residM4 winM4 loseM4 residM5 winM5 loseM5
+
+save "firm_year_alphas.dta", replace
