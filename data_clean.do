@@ -109,9 +109,13 @@ bys permno year: egen n_mons = count(month)
 	forval x = 2/12 { // calculate cumulative return at that month of the year so far
 		replace ret_cumul = l.ret_cumul*ret_plus1 if month == `x' & month > min_mon
 	}
+	gen retA = ret_cumul^(12/n_mons) // compound to 12 months based on number
+								// of months already factored in (e.g. 6-month
+								// returns should be squared)
 	replace ret_cumul = ret_cumul - 1
+	replace retA = retA - 1
 	keep if month == max_mon // want annual observations
-	gen retA = ret_cumul*12/n_mons
+	
 
 xtset permno year
 *======================================================================
