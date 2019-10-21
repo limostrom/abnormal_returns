@@ -188,10 +188,10 @@ order permno year residM1 residM1A winM1 winM1A loseM1 loseM1A ///
 				  residM4 residM4A winM4 winM4A loseM4 loseM4A ///
 				  residM5 residM5A winM5 winM5A loseM5 loseM5A
 
-save "firm_year_alphas.dta", replace
+save "Abnormal_Returns/firm_year_alphas.dta", replace
 
 *=======================================================================
-log using "log_ttest_monthly_annualized.txt", text replace
+log using "Abnormal_Returns/log_ttest_monthly_annualized.txt", text replace
 
 foreach var in resid win lose {
 	foreach n in 1 3 4 5 {
