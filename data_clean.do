@@ -34,6 +34,8 @@ clear all
 cap log close
 pause on
 
+
+
 global repo "../Documents\GitHub\abnormal_returns"
 
 cap cd "C:\Users\lmostrom\Dropbox\"
@@ -114,62 +116,88 @@ bys permno year: egen n_mons = count(month)
 								// returns should be squared)
 	replace ret_cumul = ret_cumul - 1 // want r not 1+r
 	replace retA = retA - 1
-	keep if month == max_mon // want annual observations
-	
-xtset permno year
 
+xtset permno datem
 *======================================================================
 * NOW SAVE RESIDUALS FOR FIRM-YEAR ABNORMAL RETURNS DATASET
 *======================================================================
-*winsor retA, p(0.025) gen(retA_w)
-summ retA, d
-	drop if retA <= r(p1) | retA >= r(p99) // dropping top and bottom 1% of outlier returns
+foreach A in "" "A" { // first using monthly returns then annualized returns
+
+*winsor ret`A', p(0.025) gen(retA_w)
+qui summ ret`A', d
+	local pct01 = r(p1)
+qui summ ret`A', d
+	local pct99 = r(p99) // dropping top and bottom 1% of outlier returns
 
 foreach model in CAPM FF3 Carhart4 Liq5 {
 	if "`model'" == "CAPM" {
-		local rhs "mktrfA"
+		local rhs "mktrf`A' if inrange(ret`A', `pct01', `pct99')"
 		local x = 1
 	}
 	if "`model'" == "FF3" {
-		local rhs "mktrfA smbA hmlA"
+		local rhs "mktrf`A' smb`A' hml`A' if inrange(ret`A', `pct01', `pct99')"
 		local x = 3
 	}
 	if "`model'" == "Carhart4" {
-		local rhs "mktrfA smbA hmlA umdA"
+		local rhs "mktrf`A' smb`A' hml`A' umd`A' if inrange(ret`A', `pct01', `pct99')"
 		local x = 4
 	}
 	if "`model'" == "Liq5" {
-		local rhs "mktrfA smbA hmlA umdA ps_vwfA if year <= 2017"
+		local rhs "mktrf`A' smb`A' hml`A' umd`A' ps_vwf`A' if inrange(ret`A', `pct01', `pct99') & year <= 2017"
 			// liquidity only available up through 2017
 		local x = 5
 	}
 
-	reg retA `rhs'
-		predict residM`x', residuals
+	reg ret`A' `rhs' 
+		predict residM`x'`A', residuals
+}
+
+if "`A'" == "" { // want average residuals for each firm-year based on monthly regs
+	foreach n in 1 3 4 5 {
+		bys permno year: ereplace residM`n' = mean(residM`n')
+	}
+	keep if month == max_mon
 }
 
 foreach model in M1 M3 M4 M5 {
-	qui summ resid`model', d
-	gen win`model' = (resid`model' >= r(p90)) // top 10% of alphas
-	qui summ resid`model', d
-	gen lose`model' = (resid`model' <= r(p10)) // bottom 10% of alphas
+	qui summ resid`model'`A' if resid`model'`A' != ., d
+	gen win`model'`A' = (resid`model'`A' >= r(p90)) if resid`model'`A' != . // top 10% of alphas
+	qui summ resid`model'`A' if resid`model'`A' != ., d
+	gen lose`model'`A' = (resid`model'`A' <= r(p10)) if resid`model'`A' != . // bottom 10% of alphas
 }
 
-lab var residM1 "Residual from CAPM Model"
-lab var residM3 "Residual from Fama-French 3-Factor Model"
-lab var residM4 "Residual from Carhart 4-Factor Model"
-lab var residM5 "Residual from 5-Factor Model w/ Liquidity"
+lab var residM1`A' "Residual from CAPM Model"
+lab var residM3`A' "Residual from Fama-French 3-Factor Model"
+lab var residM4`A' "Residual from Carhart 4-Factor Model"
+lab var residM5`A' "Residual from 5-Factor Model w/ Liquidity"
 
-lab var winM1 "Residual in top 10% of residuals"
-	lab var winM3 "Residual in top 10% of residuals"
-	lab var winM4 "Residual in top 10% of residuals"
-	lab var winM5 "Residual in top 10% of residuals"
-lab var loseM1 "Residual in bottom 10% of residuals"
-	lab var loseM3 "Residual in bottom 10% of residuals"
-	lab var loseM4 "Residual in bottom 10% of residuals"
-	lab var loseM5 "Residual in bottom 10% of residuals"
+lab var winM1`A' "Residual in top 10% of residuals"
+	lab var winM3`A' "Residual in top 10% of residuals"
+	lab var winM4`A' "Residual in top 10% of residuals"
+	lab var winM5`A' "Residual in top 10% of residuals"
+lab var loseM1`A' "Residual in bottom 10% of residuals"
+	lab var loseM3`A' "Residual in bottom 10% of residuals"
+	lab var loseM4`A' "Residual in bottom 10% of residuals"
+	lab var loseM5`A' "Residual in bottom 10% of residuals"
 
-keep permno year residM1 winM1 loseM1 residM3 winM3 loseM3 ///
-				 residM4 winM4 loseM4 residM5 winM5 loseM5
+} // end monthly/annualized loop
+
+keep permno year resid* win* lose*
+order permno year residM1 residM1A winM1 winM1A loseM1 loseM1A ///
+				  residM3 residM3A winM3 winM3A loseM3 loseM3A ///
+				  residM4 residM4A winM4 winM4A loseM4 loseM4A ///
+				  residM5 residM5A winM5 winM5A loseM5 loseM5A
 
 save "firm_year_alphas.dta", replace
+
+*=======================================================================
+log using "log_ttest_monthly_annualized.txt", text replace
+
+foreach var in resid win lose {
+	foreach n in 1 3 4 5 {
+		ttest `var'M`n' == `var'M`n'A
+	}
+}
+
+cap log close
+*=======================================================================
