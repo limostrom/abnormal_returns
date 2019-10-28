@@ -22,7 +22,7 @@ global repo "../Documents\GitHub\abnormal_returns"
 cap cd "C:\Users\lmostrom\Dropbox\"
 
 *=======================================================================
-* Import CRSP, Compustat, Execucomp, and Audit Analytics datasets
+* Import Compustat-CRSP, Execucomp, and Audit Analytics datasets
 *=======================================================================
 if `import' == 1 {
 	import delimited "Compustat-CRSP_Merged_Monthly.csv", clear varn(1)
@@ -124,6 +124,8 @@ if `dea' == 1 {
 	gen dmu = gvkey_str + fyear_str
 	isid dmu
 
+	* DEA Model
+	*	(www.cgdev.org/sites/default/files/archive/doc/stata/MO/DEA/dea_in_stata.pdf)
 	forval ff = 1/47 {
 		dea cogs xsga ppent ops_leases rd_net gdwl oth_intan = sale ///
 			if ff48 == `ff', ///
