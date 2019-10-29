@@ -34,8 +34,9 @@ clear all
 cap log close
 pause on
 
-local import 1
-local clean 0
+local import 0
+local clean 1
+local resids 0
 
 global repo "../Documents\GitHub\abnormal_returns"
 
@@ -101,7 +102,7 @@ if `import' == 1 {
 	*--------------------------------------------------------
 } // end import section
 *------------------------------------------------------------
-else use cusip date ret dlstcd using "CRSP.dta", clear
+if `import' == 0 & `clean' == 1 use permno date ret dlstcd using "CRSP_ret_dlstcd.dta", clear
 *=======================================================================
 *------------------
 if `clean' == 1 {
@@ -110,15 +111,15 @@ if `clean' == 1 {
 	merge m:1 date using "FamaFrench.dta", nogen assert(3) ///
 		keepus(year month datem *A)
 
-	xtset cusip datem
+	xtset permno datem
 
 	gen ret_plus1 = ret + 1 // to compound monthly returns into annual
-	bys cusip year: egen n_mons = count(month)
+	bys permno year: egen n_mons = count(month)
 			// so return can be scaled up if fewer than 12 months of returns in data
-		bys cusip year: egen min_mon = min(month)
-		bys cusip year: egen max_mon = max(month)
+		bys permno year: egen min_mon = min(month)
+		bys permno year: egen max_mon = max(month)
 		gen ret_cumul = ret_plus1 if month == min_mon
-		sort cusip datem
+		sort permno datem
 		forval x = 2/12 { // calculate cumulative return at that month of the year so far
 			replace ret_cumul = l.ret_cumul*ret_plus1 if month == `x' & month > min_mon
 		}
@@ -128,10 +129,16 @@ if `clean' == 1 {
 		replace ret_cumul = ret_cumul - 1 // want r not 1+r
 		replace retA = retA - 1
 
-	xtset cusip datem
-	*======================================================================
-	* NOW SAVE RESIDUALS FOR FIRM-YEAR ABNORMAL RETURNS DATASET
-	*======================================================================
+	xtset permno datem
+	save "Abnormal_Returns/returns_annualized.dta", replace
+} // end clean section
+if `clean' == 0 & `resids' == 1 use "Abnormal_Returns/returns_annualized.dta", clear
+
+*======================================================================
+* NOW SAVE RESIDUALS FOR FIRM-YEAR ABNORMAL RETURNS DATASET
+*======================================================================
+if `resids' == 1 {
+*-------------------
 	foreach A in "" "A" { // first using monthly returns then annualized returns
 
 	*winsor ret`A', p(0.025) gen(retA_w)
@@ -165,7 +172,7 @@ if `clean' == 1 {
 
 	if "`A'" == "" { // want average residuals for each firm-year based on monthly regs
 		foreach n in 1 3 4 5 {
-			bys cusip year: ereplace residM`n' = mean(residM`n')
+			bys permno year: ereplace residM`n' = mean(residM`n')
 		}
 		keep if month == max_mon
 	}
@@ -193,8 +200,8 @@ if `clean' == 1 {
 
 	} // end monthly/annualized loop
 
-	keep cusip year resid* win* lose*
-	order cusip year residM1 residM1A winM1 winM1A loseM1 loseM1A ///
+	keep permno year resid* win* lose*
+	order permno year residM1 residM1A winM1 winM1A loseM1 loseM1A ///
 					  residM3 residM3A winM3 winM3A loseM3 loseM3A ///
 					  residM4 residM4A winM4 winM4A loseM4 loseM4A ///
 					  residM5 residM5A winM5 winM5A loseM5 loseM5A
@@ -211,5 +218,5 @@ if `clean' == 1 {
 	}
 
 	cap log close
-} // end clean section
+} // end resids section
 *=======================================================================
