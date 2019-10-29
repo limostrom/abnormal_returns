@@ -34,27 +34,27 @@ if `import' == 1 {
 	
 	import delimited "Compustat-CRSP_Merged_Annual.csv", clear varn(1)
 		*For DEA Calculation of Firm Efficiency
-		lab var sale "Sales ($M)"
-		lab var cogs "COGS ($M)"
-		lab var xsga "Selling, General & Admin Expense ($M)"
-		lab var ppent "Property, Plant & Equipment ($M)"
+		lab var sale "Sales ($MM)"
+		lab var cogs "COGS ($MM)"
+		lab var xsga "Selling, General & Admin Expense ($MM)"
+		lab var ppent "Property, Plant & Equipment ($MM)"
 		forval x = 1/5 {
-			lab var mrc`x' "Min rental commitments due in `x' year(s) ($M)"
+			lab var mrc`x' "Min rental commitments due in `x' year(s) ($MM)"
 		}
-		lab var xrd "R&D Expense ($M)"
-		lab var gdwl "Purchase Goodwill ($M)"
-		lab var intan "Total Intangible Assets ($M)"
+		lab var xrd "R&D Expense ($MM)"
+		lab var gdwl "Purchase Goodwill ($MM)"
+		lab var intan "Total Intangible Assets ($MM)"
 
 		*For Calculation of Managerial Ability via Residual
-		lab var at "Total Assets ($M)"
+		lab var at "Total Assets ($MM)"
 		lab var oibdp "Op. Income before Depreciation"
-		lab var rect "Total Receivables ($M)"
-		lab var invt "Total Inventory ($M)"
-		lab var aco "Other Current Assets ($M)"
-		lab var ap "Accounts Payable ($M)"
-		lab var lco "Other Current Liabilities ($M)"
-		lab var capx "Capital Expenditures ($M)"
-		lab var fca "Foreign Currency Adjustment (Income Account) ($M)"
+		lab var rect "Total Receivables ($MM)"
+		lab var invt "Total Inventory ($MM)"
+		lab var aco "Other Current Assets ($MM)"
+		lab var ap "Accounts Payable ($MM)"
+		lab var lco "Other Current Liabilities ($MM)"
+		lab var capx "Capital Expenditures ($MM)"
+		lab var fca "Foreign Currency Adjustment (Income Account) ($MM)"
 
 	save "Compustat-CRSP_Merged_Annual.dta", replace
 	
@@ -109,10 +109,13 @@ if `dea' == 1 {
 		replace rd_net = rd_net + l`t'.xrd*(1-0.2*`t')
 	} // per Demerjian et al. 2012
 
+	replace gdwl = 0 if gdwl == .
+
 	gen oth_intan = intan - gdwl
 	lab var oth_intan "Intangible Assets less Purchased Goodwill"
 
 	forval x = 1/5 {
+		replace mrc`x' = 0 if mrc`x' == .
 		gen mrc`x'_pv = mrc`x'/(1.1^`x') // discounted at 10%
 	} // per Demerjian et al. 2012
 	gen ops_leases = mrc1_pv + mrc2_pv + mrc3_pv + mrc4_pv + mrc5_pv
@@ -121,15 +124,15 @@ if `dea' == 1 {
 	keep if fyear >= 1980
 	tostring gvkey, gen(gvkey_str)
 	tostring fyear, gen(fyear_str)
-	gen dmu = gvkey_str + fyear_str
-	isid dmu
+	gen dmu = gvkey_str
 
 	* DEA Model
 	*	(www.cgdev.org/sites/default/files/archive/doc/stata/MO/DEA/dea_in_stata.pdf)
 	forval ff = 1/47 {
 		dea cogs xsga ppent ops_leases rd_net gdwl oth_intan = sale ///
 			if ff48 == `ff', ///
-			saving("Abnormal_Returns/FirmEfficiency_ind`ff'.dta")
+			saving("Abnormal_Returns/FirmEfficiency_ind`ff'.dta", replace)
+		dis("Industry `ff'")
 	}
 
 } // end `merge' section
