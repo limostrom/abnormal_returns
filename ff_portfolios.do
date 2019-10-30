@@ -34,10 +34,10 @@ pause on
 global repo "C:/Users/lmostrom/Documents\GitHub\abnormal_returns"
 cap cd "C:\Users\lmostrom\Dropbox\Abnormal_Returns"
 
-local import 0 // import portfolio returns CSVs and breakpoint CSVs
-local cpu_merge 0 // merge with Compustat-CRSP pre-merged dataset
+local import 1 // import portfolio returns CSVs and breakpoint CSVs
+local cpu_merge 1 // merge with Compustat-CRSP pre-merged dataset
 local brkpt_merge 1 // merge with percentile breakpoints
-local ff_merge 0 // merge with Fama-French portfolio returns datasets
+local ff_merge 1 // merge with Fama-French portfolio returns datasets
 
 *%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 *---------------------
@@ -68,7 +68,7 @@ if `import' == 1 {
 		ren lo10 me10
 		ren dec? me?0
 		ren hi10 me100
-		ren me* me*_vw
+		ren me* me*_eqw
 
 		save "portfolio_returns_10_ME_eqw.dta", replace
 
@@ -86,7 +86,7 @@ if `import' == 1 {
 		ren me2bm2 me100bm70
 		ren me* me*_vw
 
-		save "portfolio_returns_6_ME_BE-ME_vw.dta", replace
+		save "portfolio_returns_6_ME_BM_vw.dta", replace
 
 	import delimited "6_Portfolios_2x3.csv", ///
 			rowr(2356:2448) varn(2356) clear // Equal Weighted, Annual
@@ -99,7 +99,7 @@ if `import' == 1 {
 		ren me2bm2 me100bm70
 		ren me* me*_eqw
 
-		save "portfolio_returns_6_ME_BE-ME_eqw.dta", replace
+		save "portfolio_returns_6_ME_BM_eqw.dta", replace
 
 	*------------------------------------
 	* Size & BE/ME 25 Group Portfolios
@@ -109,32 +109,32 @@ if `import' == 1 {
 		ren v1 fyear
 		ren small* me20* // renaming in terms of percentiles
 		ren big* me100*
-		ren *lobm *bm30
+		ren *lobm *bm20
 		ren *hibm *bm100
 		forval x = 1/5 {
 			local p = `x' * 20
-			ren me`x'* me`p'*
+			ren me`x'bm* me`p'bm*
 			ren *bm`x' *bm`p'
 		}
 		ren me* me*_vw
 
-		save "portfolio_returns_25_ME_BE-ME_vw.dta", replace
+		save "portfolio_returns_25_ME_BM_vw.dta", replace
 
 	import delimited "25_Portfolios_5x5.csv", ///
 			rowr(2356:2448) varn(2356) clear // Equal Weighted, Annual
 		ren v1 fyear
 		ren small* me20* // renaming in terms of percentiles
 		ren big* me100*
-		ren *lobm *bm30
+		ren *lobm *bm20
 		ren *hibm *bm100
 		forval x = 1/5 {
 			local p = `x' * 20
-			ren me`x'* me`p'*
+			ren me`x'bm* me`p'bm*
 			ren *bm`x' *bm`p'
 		}
 		ren me* me*_eqw
 
-		save "portfolio_returns_25_ME_BE-ME_eqw.dta", replace
+		save "portfolio_returns_25_ME_BM_eqw.dta", replace
 
 	*----------------------------------------------
 	* Size & BE/ME & Op Profit 32 Group Portfolios
@@ -143,37 +143,41 @@ if `import' == 1 {
 			rowr(1374:1429) varn(1374) clear // Value Weighted, Annual
 		ren v1 fyear
 		ren small* me50* // renaming in terms of percentiles
+			ren me1bm* me50bm*
 		ren big* me100*
+			ren me2bm* me100bm*
 		ren *lobm* *bm25*
 		ren *hibm* *bm100*
 		ren *loop *op25
 		ren *hiop *op100
 		forval x = 1/4 {
 			local p = `x' * 25
-			ren *bm`x'* *bm`p'*
+			ren *bm`x'op* *bm`p'op*
 			ren *op`x' *op`p'
 		}
 		ren me* me*_vw
 
-		save "portfolio_returns_32_ME_BE-ME_OP_vw.dta", replace
+		save "portfolio_returns_32_ME_BM_OP_vw.dta", replace
 
 	import delimited "32_Portfolios_ME_BEME_OP_2x4x4.csv", ///
 			rowr(1433:1488) varn(1433) clear // Equal Weighted, Annual
 		ren v1 fyear
 		ren small* me50* // renaming in terms of percentiles
+			ren me1bm* me50bm*
 		ren big* me100*
+			ren me2bm* me100bm*
 		ren *lobm* *bm25*
 		ren *hibm* *bm100*
 		ren *loop *op25
 		ren *hiop *op100
 		forval x = 1/4 {
 			local p = `x' * 25
-			ren *bm`x'* *bm`p'*
+			ren *bm`x'op* *bm`p'op*
 			ren *op`x' *op`p'
 		}
 		ren me* me*_eqw
 
-		save "portfolio_returns_32_ME_BE-ME_OP_eqw.dta", replace
+		save "portfolio_returns_32_ME_BM_OP_eqw.dta", replace
 
 	*------------------------------------------
 	* Fama-French Industry 48 Group Portfolios
@@ -200,7 +204,7 @@ if `import' == 1 {
 			ren `var' ind`i'
 			local ++i
 		}
-		ren ind* ind*_vw
+		ren ind* ind*_eqw
 
 		save "portfolio_returns_48_Ind_eqw.dta", replace
 
@@ -298,7 +302,7 @@ if `cpu_merge' == 1 {
 
 	* First merge in income statement variables and closing prices (year t)
 	merge 1:1 lpermno fyear using `compucrspA', keep(1 3) gen(cpu_merge) ///
-		keepus(sale cogs xsga xint sic)
+		keepus(sale cogs xsga xint sic gvkey)
 
 		lab var sale "Sales ($ MM)"
 		lab var cogs "Cost of Goods Sold ($ MM)"
@@ -396,6 +400,12 @@ if `brkpt_merge' == 1 {
 	
 	drop OP_pct?*
 
+
+**** Making plots of how these observations are distributed in terms of percentiles ****
+	/*	-the size (ME) plot is skewed right because percentiles are calculated based on NYSE
+			firms, but NASDAQ firms are included in the dataset as well (and they are on
+			average much smaller). That's why the deciles from Fama-French don't reflect even
+			groups covering 10% of the sample in each one. */
 	cap mkdir "Distribution_Plots"
 
 	qui summ ME_pct
@@ -418,4 +428,113 @@ if `brkpt_merge' == 1 {
 
 *--------------------------
 } // end brkpt_merge section
+*--------------------------
+*%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+*---------------------
+if `ff_merge' == 1 {
+*---------------------
+
+	* --- First merge in size decile portfolios --- *
+	foreach wt in "eqw" "vw" {
+		merge m:1 fyear using "FamaFrench/portfolio_returns_10_ME_`wt'.dta", nogen keep(3)
+
+		if "`wt'" == "eqw" { // just do it the first time
+			gen pf_10_ME_name = "me10" if ME_pct <= 10
+			forval j = 20(10)100 {
+				local i = `j' - 5
+				replace pf_10_ME_name = "me`j'" if inlist(ME_pct, `i', `j')
+			}
+		}
+		gen pf_10_ME_ret_`wt' = .
+		foreach var of varlist *_`wt' {
+			replace pf_10_ME_ret_`wt' = `var' if "`var'" == pf_10_ME_name + "_`wt'"
+		}
+		drop me*_`wt'
+	}
+	
+	* --- Next merge in Size-B/M 2x3 portfolios --- *
+	foreach wt in "eqw" "vw" {
+		merge m:1 fyear using "FamaFrench/portfolio_returns_6_ME_BM_`wt'.dta", nogen keep(3)
+
+		if "`wt'" == "eqw" { // just do it the first time
+			gen pf_6_ME_BM_name = "me50" if ME_pct <= 50
+				replace pf_6_ME_BM_name = "me100" if inrange(ME_pct, 55, 100)
+				replace pf_6_ME_BM_name = pf_6_ME_BM_name + "bm30" if BM_pct <= 30
+				replace pf_6_ME_BM_name = pf_6_ME_BM_name + "bm70" if inrange(BM_pct, 35, 70)
+				replace pf_6_ME_BM_name = pf_6_ME_BM_name + "bm100" if inrange(BM_pct, 75, 100)
+		}
+		gen pf_6_ME_BM_ret_`wt' = .
+		foreach var of varlist *_`wt' {
+			replace pf_6_ME_BM_ret_`wt' = `var' if "`var'" == pf_6_ME_BM_name + "_`wt'"
+		}
+		drop me*_`wt'
+	}
+
+	* --- Next merge in Size-B/M 5x5 portfolios --- *
+	foreach wt in "eqw" "vw" {
+		merge m:1 fyear using "FamaFrench/portfolio_returns_25_ME_BM_`wt'.dta", nogen keep(3)
+
+		if "`wt'" == "eqw" { // just do it the first time
+			gen pf_25_ME_BM_name = "me20" if ME_pct <= 20
+			replace pf_25_ME_BM_name = pf_25_ME_BM_name + "bm20" if BM_pct <= 20
+			forval j = 40(20)100 {
+				local i = `j' - 15
+				replace pf_25_ME_BM_name = "me`j'" + pf_25_ME_BM_name if inrange(ME_pct, `i', `j')
+				replace pf_25_ME_BM_name = pf_25_ME_BM_name + "bm`j'" if inrange(BM_pct, `i', `j')
+			}
+		}
+		gen pf_25_ME_BM_ret_`wt' = .
+		foreach var of varlist *_`wt' {
+			replace pf_25_ME_BM_ret_`wt' = `var' if "`var'" == pf_25_ME_BM_name + "_`wt'"
+		}
+		drop me*_`wt'
+	}
+
+	* --- Next merge in Size-B/M-OP 2x4x4 portfolios --- *
+	foreach wt in "eqw" "vw" {
+		merge m:1 fyear using "FamaFrench/portfolio_returns_32_ME_BM_OP_`wt'.dta", nogen keep(3)
+
+		if "`wt'" == "eqw" { // just do it the first time
+			gen pf_32_ME_BM_name = "me50" if ME_pct <= 50
+			replace pf_32_ME_BM_name = "me100" if inrange(ME_pct, 55, 100)
+			forval j = 25(25)100 {
+				local i = `j' - 20
+				replace pf_32_ME_BM_name = pf_32_ME_BM_name + "bm`j'" if inrange(BM_pct, `i', `j')
+			}
+			forval j = 25(25)100 {
+				local i = `j' - 20
+				replace pf_32_ME_BM_name = pf_32_ME_BM_name + "op`j'" if inrange(OP_pct, `i', `j')
+			}
+		}
+		gen pf_32_ME_BM_ret_`wt' = .
+		foreach var of varlist *_`wt' {
+			replace pf_32_ME_BM_ret_`wt' = `var' if "`var'" == pf_32_ME_BM_name + "_`wt'"
+		}
+		drop me*_`wt'
+	}	
+
+	* --- Next merge in 48 Industry portfolios --- *
+	foreach wt in "eqw" "vw" {
+		merge m:1 fyear using "FamaFrench/portfolio_returns_48_Ind_`wt'.dta", nogen keep(3)
+
+		gen pf_48_Ind_ret_`wt' = .
+		forval i = 1/48 {
+			replace pf_48_Ind_ret_`wt' = ind`i'_`wt' if ff48 == `i'
+		}
+		drop ind*_`wt'
+	}
+
+
+	*----------------------------------------------------------
+	* Now save dataset of annual returns and portfolio returns
+	*----------------------------------------------------------
+	keep gvkey lpermno fyear retA pf_*
+		replace retA = retA*100
+	order gvkey lpermno fyear retA pf_10* pf_6* pf_25* pf_32* pf_48*
+	sort lpermno fyear
+
+	save "returns_annualized_wFF_portfolios.dta", replace
+
+*--------------------------
+} // end ff_merge section
 *--------------------------
