@@ -34,8 +34,8 @@ pause on
 global repo "C:/Users/lmostrom/Documents\GitHub\abnormal_returns"
 cap cd "C:\Users\lmostrom\Dropbox\Abnormal_Returns"
 
-local import 1 // import portfolio returns CSVs and breakpoint CSVs
-local cpu_merge 1 // merge with Compustat-CRSP pre-merged dataset
+local import 0 // import portfolio returns CSVs and breakpoint CSVs
+local cpu_merge 0 // merge with Compustat-CRSP pre-merged dataset
 local brkpt_merge 1 // merge with percentile breakpoints
 local ff_merge 1 // merge with Fama-French portfolio returns datasets
 
@@ -444,6 +444,11 @@ if `ff_merge' == 1 {
 				local i = `j' - 5
 				replace pf_10_ME_name = "me`j'" if inlist(ME_pct, `i', `j')
 			}
+			replace pf_10_ME_name = "" if ME_pct == .
+			gen pf_10_ME_cat = substr(pf_10_ME_name, 3, 1) ///
+					if pf_10_ME_name != "me100"
+				replace pf_10_ME_cat = "10" if pf_10_ME_name == "me100"
+				destring pf_10_ME_cat, replace
 		}
 		gen pf_10_ME_ret_`wt' = .
 		foreach var of varlist *_`wt' {
@@ -462,6 +467,9 @@ if `ff_merge' == 1 {
 				replace pf_6_ME_BM_name = pf_6_ME_BM_name + "bm30" if BM_pct <= 30
 				replace pf_6_ME_BM_name = pf_6_ME_BM_name + "bm70" if inrange(BM_pct, 35, 70)
 				replace pf_6_ME_BM_name = pf_6_ME_BM_name + "bm100" if inrange(BM_pct, 75, 100)
+			replace pf_6_ME_BM_name = "" if ME_pct == . | BM_pct == .
+			sort pf_6_ME_BM_name
+			egen pf_6_ME_BM_cat = group(pf_6_ME_BM_name)
 		}
 		gen pf_6_ME_BM_ret_`wt' = .
 		foreach var of varlist *_`wt' {
@@ -482,6 +490,9 @@ if `ff_merge' == 1 {
 				replace pf_25_ME_BM_name = "me`j'" + pf_25_ME_BM_name if inrange(ME_pct, `i', `j')
 				replace pf_25_ME_BM_name = pf_25_ME_BM_name + "bm`j'" if inrange(BM_pct, `i', `j')
 			}
+			replace pf_25_ME_BM_name = "" if ME_pct == . | BM_pct == .
+			sort pf_25_ME_BM_name
+			egen pf_25_ME_BM_cat = group(pf_25_ME_BM_name)
 		}
 		gen pf_25_ME_BM_ret_`wt' = .
 		foreach var of varlist *_`wt' {
@@ -495,20 +506,25 @@ if `ff_merge' == 1 {
 		merge m:1 fyear using "FamaFrench/portfolio_returns_32_ME_BM_OP_`wt'.dta", nogen keep(3)
 
 		if "`wt'" == "eqw" { // just do it the first time
-			gen pf_32_ME_BM_name = "me50" if ME_pct <= 50
-			replace pf_32_ME_BM_name = "me100" if inrange(ME_pct, 55, 100)
+			gen pf_32_ME_BM_OP_name = "me50" if ME_pct <= 50
+			replace pf_32_ME_BM_OP_name = "me100" if inrange(ME_pct, 55, 100)
 			forval j = 25(25)100 {
 				local i = `j' - 20
-				replace pf_32_ME_BM_name = pf_32_ME_BM_name + "bm`j'" if inrange(BM_pct, `i', `j')
+				replace pf_32_ME_BM_OP_name = pf_32_ME_BM_OP_name + "bm`j'" ///
+														if inrange(BM_pct, `i', `j')
 			}
 			forval j = 25(25)100 {
 				local i = `j' - 20
-				replace pf_32_ME_BM_name = pf_32_ME_BM_name + "op`j'" if inrange(OP_pct, `i', `j')
+				replace pf_32_ME_BM_OP_name = pf_32_ME_BM_OP_name + "op`j'" ///
+														if inrange(OP_pct, `i', `j')
 			}
+			replace pf_32_ME_BM_OP_name = "" if ME_pct == . | BM_pct == . | OP_pct == .
+			sort pf_32_ME_BM_OP_name
+			egen pf_32_ME_BM_OP_cat = group(pf_32_ME_BM_OP_name)
 		}
-		gen pf_32_ME_BM_ret_`wt' = .
+		gen pf_32_ME_BM_OP_ret_`wt' = .
 		foreach var of varlist *_`wt' {
-			replace pf_32_ME_BM_ret_`wt' = `var' if "`var'" == pf_32_ME_BM_name + "_`wt'"
+			replace pf_32_ME_BM_OP_ret_`wt' = `var' if "`var'" == pf_32_ME_BM_OP_name + "_`wt'"
 		}
 		drop me*_`wt'
 	}	
@@ -528,13 +544,16 @@ if `ff_merge' == 1 {
 	*----------------------------------------------------------
 	* Now save dataset of annual returns and portfolio returns
 	*----------------------------------------------------------
-	keep gvkey lpermno fyear retA pf_*
-		replace retA = retA*100
-	order gvkey lpermno fyear retA pf_10* pf_6* pf_25* pf_32* pf_48*
-	sort lpermno fyear
+	preserve
+		keep gvkey lpermno fyear retA ME BEtoME OP *_pct pf_* ff48*
+			replace retA = retA*100
+		order gvkey lpermno fyear retA ME ME_pct BEtoME BM_pct OP OP_pct ///
+				pf_10* pf_6* pf_25* pf_32* ff48 ff48_name pf_48*
+		sort lpermno fyear
 
-	save "returns_annualized_wFF_portfolios.dta", replace
-
+		save "returns_annualized_wFF_portfolios.dta", replace
+		pause
+	restore
 *--------------------------
 } // end ff_merge section
 *--------------------------
