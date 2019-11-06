@@ -47,7 +47,7 @@ if `import' == 1 {
 
 		*For Calculation of Managerial Ability via Residual
 		lab var at "Total Assets ($MM)"
-		lab var oibdp "Op. Income before Depreciation"
+		lab var oibdp "Op. Income before Depreciation ($ MM)"
 		lab var rect "Total Receivables ($MM)"
 		lab var invt "Total Inventory ($MM)"
 		lab var aco "Other Current Assets ($MM)"
