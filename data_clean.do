@@ -38,6 +38,7 @@ local import 0
 local clean 0
 local resids 0
 local variance 0
+local growth 1
 
 global repo "C:\Users\lmostrom\Documents\GitHub\abnormal_returns"
 
@@ -302,4 +303,155 @@ if `variance' == 1 {
 
 } // end variance section
 *=======================================================================
-
+
+*======================================================================
+* COMPUTE FIRM- AND INDUSTRY-LEVEL COMPOUNDED RETURNS & GROWTH RATES
+*======================================================================
+if `growth' == 1 {
+*-------------------
+	use permno date year retA ///
+		using "Abnormal_Returns/returns_annualized.dta", clear
+
+	ren permno lpermno
+	destring date, gen(datadate)
+	merge 1:1 lpermno datadate using "Compustat-CRSP_Merged_Annual.dta", ///
+		nogen keepus(sic aqc capx revt xsga do csho prcc_c) keep(3)
+
+	sort lpermno datadate // sometimes more than one ob per firm-year
+		collapse (last) retA sic aqc capx revt xsga do csho prcc_c, by(lpermno year) fast
+
+	gen mktcap = prcc_c*csho
+		lab var mktcap "Market Capitalization ($ MM)"
+
+	merge m:1 sic using "FamaFrench48.dta", gen(ff_merge) keep(1 3)
+		/* Filling in SIC codes not assigned by the Fama French 48 industry document
+		based on https://www.eeoc.gov/eeoc/statistics/employment/jobpat-eeo1/siccodes.cfm */
+		* Fishing, hunting, trapping
+		replace ff48 = 6 if ff48 == . & sic == 900
+			replace ff48_name = "Recreation" if ff48 == 6 & ff48_name == ""
+		* Miscellaneous Manufactures, Unknown
+		replace ff48 = 48 if ff48 == . & inlist(sic, 3990, 6797, 9995, 9997)
+			replace ff48_name = "Other" if ff48 == 48 & ff48_name == ""
+		assert ff48 != .
+
+	bys ff48 year: egen ind_mktcap_tot = total(mktcap)
+		gen wt = mktcap/ind_mktcap_tot
+			bys ff48 year: egen check = total(wt) // just making sure the weights add to 1
+			assert inrange(check, 0.999, 1.001)
+			drop check
+
+	foreach var of varlist retA aqc capx xsga do revt {
+		if !inlist("`var'", "retA", "revt") replace `var' = 0 if `var' == .
+		gen `var'_wtd = `var'*wt
+			lab var `var'_wtd "`var' weighted by market cap share of industry"
+		bys ff48 year: egen ind_vw_`var' = total(`var'_wtd)
+			lab var ind_vw_`var' "Industry value-weighted `var'"
+		bys ff48 year: egen ind_m_`var' = median(`var')
+			lab var ind_m_`var' "Industry median `var'"
+	}
+
+	xtset lpermno year
+
+	* --- Returns --- *
+	gen firm_ret0 = retA
+		lab var firm_ret0 "Firm return over this year"
+	gen ind_vw_ret0 = ind_vw_retA
+		lab var ind_vw_ret0 "Industry value-weighted return over this year"
+
+	forval i = 1/10 {
+		local i_1 = `i' - 1
+		
+		gen firm_ret`i' = (1 + firm_ret`i_1')*(1 + F`i'.retA) - 1 ///
+			if F`i'.retA != .
+			lab var firm_ret`i' "Firm return over this and the next `i' year(s)"
+
+		gen ind_vw_ret`i' = (1 + ind_vw_ret`i_1')*(1 + F`i'.ind_vw_retA) - 1 ///
+			if F`i'.ind_vw_retA != .
+			lab var ind_vw_ret`i' "Industry value-weighted return over this and the next `i' year(s)"
+	}
+
+	* --- Revenue Growth --- *
+	gen firm_rev_g0 = revt/l.revt // current year over past year
+		lab var firm_rev_g0 "Revenue growth from last year to now"
+	gen ind_vw_rev_g0 = ind_vw_revt/L.ind_vw_revt
+		lab var ind_vw_rev_g0 "Industry value-weighted revenue growth from last year to now"
+	bys ff48 year: egen ind_m_rev_g0 = median(firm_rev_g0)
+		lab var ind_m_rev_g0 "Industry median revenue growth from last year to now"
+
+	forval i = 1/10 {
+		local i_1 = `i' - 1
+		
+		sort lpermno year
+		gen firm_rev_g`i' = F`i'.revt/L.revt
+			lab var firm_rev_g`i' "Revenue growth from last year to `i' year(s) from now"
+
+		gen ind_vw_rev_g`i' = F`i'.ind_vw_revt/L.ind_vw_revt
+			lab var ind_vw_rev_g`i' "Industry value-weighted revenue growth from last year to `i' year(s) from now"
+
+		bys ff48 year: egen ind_m_rev_g`i' = median(firm_rev_g`i')
+			lab var ind_m_rev_g`i' "Industry median revenue growth from last year to `i' year(s) from now"
+	}
+
+	* --- Forward Sums for Forward-Looking Ratios --- *
+	sort lpermno year
+	forval i = 0/10 {
+		local i_1 = `i' - 1
+		foreach pref in "" "ind_vw_" "ind_m_" {
+			rangestat (sum) `pref'capx_fsum`i' = `pref'capx `pref'xsga_fsum`i' = `pref'xsga ///
+							`pref'aqc_fsum`i' = `pref'aqc  	`pref'do_fsum`i' = `pref'do ///
+							`pref'revt_fsum`i' = `pref'revt, interval(year 0 `i') by(lpermno)
+			foreach var in capx xsga aqc do revt { // set missing if missing a year in the interval
+				if `i' > 0 ///
+					replace `pref'`var'_fsum`i' = . ///
+							if (`pref'`var'_fsum`i' == `pref'`var'_fsum`i_1' & F`i'.`pref'`var' != 0)  ///
+								| `pref'`var'_fsum`i_1' == .
+			}
+		}
+	}
+
+	forval i = 0/10 {
+		* --- Capex + SG&A / Revenue --- *
+		gen firm_capxsga_rev`i' = (capx_fsum`i' + xsga_fsum`i') / revt_fsum`i'
+			lab var firm_capxsga_rev`i' "Capex + SG&A over Revenue (values summed over next `i' years)"
+
+		gen ind_vw_capxsga_rev`i' = (ind_vw_capx_fsum`i' + ind_vw_xsga_fsum`i') / ind_vw_revt_fsum`i'
+			lab var ind_vw_capxsga_rev`i' "Industry value-weighted Capex + SG&A over Revenue (values summed over next `i' yrs)"
+
+		gen ind_m_capxsga_rev`i' = (ind_m_capx_fsum`i' + ind_m_xsga_fsum`i') / ind_m_revt_fsum`i'
+			lab var ind_m_capxsga_rev`i' "Industry median Capex + SG&A over Revenue (values summed over next `i' yrs)"
+
+		* --- Acquisitions / Revenue --- *
+		gen firm_aqc_rev`i' = aqc_fsum`i' / revt_fsum`i'
+			lab var firm_aqc_rev`i' "Acquisitions over Revenue (values summed over next `i' years)"
+
+		gen ind_vw_aqc_rev`i' = ind_vw_aqc_fsum`i' / ind_vw_revt_fsum`i'
+			lab var ind_vw_aqc_rev`i' "Industry value-weighted Acquisitions over Revenue (values summed over next `i' yrs)"
+
+		gen ind_m_aqc_rev`i' = ind_m_aqc_fsum`i' / ind_m_revt_fsum`i'
+			lab var ind_m_aqc_rev`i' "Industry median Acquisitions over Revenue (values summed over next `i' yrs)"
+
+		* --- Discontinued Operations / Revenue --- *
+		gen firm_do_rev`i' = do_fsum`i' / revt_fsum`i'
+			lab var firm_do_rev`i' "Discontinued Ops over Revenue (values summed over next `i' years)"
+
+		gen ind_vw_do_rev`i' = ind_vw_do_fsum`i' / ind_vw_revt_fsum`i'
+			lab var ind_vw_do_rev`i' "Industry value-weighted Discontinued Ops over Revenue (values summed over next `i' yrs)"
+
+		gen ind_m_do_rev`i' = ind_m_do_fsum`i' / ind_m_revt_fsum`i'
+			lab var ind_m_do_rev`i' "Industry median Discontinued Ops over Revenue (values summed over next `i' yrs)"
+	}
+
+	#delimit ;
+	order lpermno year
+		  firm_ret? firm_ret?? ind_vw_ret? ind_vw_ret??
+		  firm_rev_g? firm_rev_g?? ind_vw_rev_g? ind_vw_rev_g?? ind_m_rev_g? ind_m_rev_g??
+		  firm_capxsga_rev? firm_capxsga_rev?? ind_vw_capxsga_rev? ind_vw_capxsga_rev?? ind_m_capxsga_rev? ind_m_capxsga_rev??
+		  firm_aqc_rev? firm_aqc_rev?? ind_vw_aqc_rev? ind_vw_aqc_rev?? ind_m_aqc_rev? ind_m_aqc_rev??
+		  firm_do_rev? firm_do_rev?? ind_vw_do_rev? ind_vw_do_rev?? ind_m_do_rev? ind_m_do_rev??;
+	#delimit cr
+
+
+		  
+
+} // end growth section
+*=======================================================================
