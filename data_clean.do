@@ -35,10 +35,11 @@ cap log close
 pause on
 
 local import 0
-local clean 1
+local clean 0
 local resids 0
+local variance 0
 
-global repo "../Documents\GitHub\abnormal_returns"
+global repo "C:\Users\lmostrom\Documents\GitHub\abnormal_returns"
 
 cap cd "C:\Users\lmostrom\Dropbox\"
 
@@ -87,6 +88,29 @@ if `import' == 1 {
 	}
 
 	save "FamaFrench.dta", replace
+	*--------------------------------------------------------
+	*Import and save Compustat Fundamentals Q dataset
+	*--------------------------------------------------------
+	import delimited "CompustatQ.csv", clear varn(1)
+		lab var niq "Net Income - Quarterly ($ MM)"
+		lab var oibdpq "Op. Income before Depreciation - Quarterly ($ MM)"
+
+	save "CompustatQ.dta", replace
+	*--------------------------------------------------------
+	*Import and save Compustat-CRSP Fundamentals Q dataset
+	*--------------------------------------------------------
+	import delimited "Compustat-CRSP_Merged_Quarterly.csv", clear varn(1)
+		lab var niq "Net Income - Quarterly ($ MM)"
+		lab var oibdpq "Op. Income before Depreciation - Quarterly ($ MM)"
+
+	save "Compustat-CRSP_Merged_Quarterly.dta", replace
+	*--------------------------------------------------------
+	*Import and save Compustat-CRSP Linking Table
+	*--------------------------------------------------------
+	import delimited "Compustat-CRSP_Link.csv", clear varn(1)
+		destring linkenddt, replace force
+
+	save "Compustat-CRSP_Link.dta", replace
 	*--------------------------------------------------------
 	*Import and save CRSP dataset
 	*--------------------------------------------------------
@@ -220,3 +244,62 @@ if `resids' == 1 {
 	cap log close
 } // end resids section
 *=======================================================================
+
+*======================================================================
+* CREATE A DATASET OF THE SD & SKEW OF MONTHLY RETURNS AND QTR INC VARS
+*======================================================================
+if `variance' == 1 {
+*-------------------
+	use gvkey lpermno linkdt linkenddt using "Compustat-CRSP_Link.dta", clear
+		bys gvkey: gen n = _n
+			qui summ n
+			local X = r(max)
+		reshape wide lpermno linkdt linkenddt, i(gvkey) j(n)
+		tempfile link
+		save `link', replace
+
+	use gvkey datadate fyr niq oibdpq using CompustatQ, clear
+		duplicates tag gvkey datadate, gen(dup)
+			tab dup
+			local dups = r(r) == 2
+		while `dups' == 1 {
+			bys gvkey (datadate): gen to_drop = (fyr != fyr[_n+2])
+			drop if dup & to_drop
+				drop dup to_drop
+			duplicates tag gvkey datadate, gen(dup)
+				tab dup
+				local dups = r(r) == 2
+				dis "`dups'"
+		}
+
+		
+		gen lpermno = .
+		merge m:1 gvkey using `link', nogen keep(3)
+		forval x = 1/`X' {
+			replace lpermno = lpermno`x' if inrange(datadate, linkdt`x', linkenddt`x') ///
+				& lpermno == .
+		}
+		keep if lpermno != .
+		tempfile cpu
+		save `cpu', replace
+
+	use "CRSP_ret_dlstcd.dta", clear
+		ren permno lpermno
+		ren date datadate
+
+	merge 1:1 lpermno datadate using `cpu', keepus(niq oibdpq)
+		gen year = int(datadate/10000) // first four digits
+		
+		bys lpermno year: egen ret_sd = sd(ret)
+		rangestat (skewness) ret_skew = ret, interval(year 0 0) by(lpermno)
+
+		rangestat (sd) niq_sd = niq, interval(year -2 0) by(lpermno)
+		rangestat (sd) oibdpq_sd = oibdpq, interval(year -2 0) by(lpermno)
+
+	collapse (last) ret_sd ret_skew niq_sd oibdpq_sd, by(lpermno year) fast
+
+	save "Abnormal_Returns/firm_year_sds_and_skewness.dta", replace
+
+} // end variance section
+*=======================================================================
+
