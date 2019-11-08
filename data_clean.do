@@ -498,12 +498,13 @@ if `portfolio' == 1 {
 	bys year: egen tot_mktcap = total(mktcap)
 	gen wt = mktcap/tot_mktcap
 		bys year: egen check = total(wt)
-		assert inrange(check, 0.999, 1.001)
+		assert inrange(check, 0.999, 1.001) if _merge == 3
 	gen retA_vw = retA * wt
 
 	collapse (mean) retA_eqw = retA (sum) retA_vw ///
 			 (sum) firms_in_portfolio not_merged, by(year) fast
 
+	save "portfolio_subset_returns.dta", replace
 
 } // end portfolio section
 *=======================================================================
