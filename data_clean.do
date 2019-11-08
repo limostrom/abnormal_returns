@@ -38,7 +38,8 @@ local import 0
 local clean 0
 local resids 0
 local variance 0
-local growth 1
+local growth 0
+local portfolio 1
 
 global repo "C:\Users\lmostrom\Documents\GitHub\abnormal_returns"
 
@@ -133,7 +134,7 @@ if `import' == 0 & `clean' == 1 use permno date ret dlstcd using "CRSP_ret_dlstc
 if `clean' == 1 {
 *------------------
 	tostring date, replace
-	merge m:1 date using "FamaFrench.dta", nogen assert(3) ///
+	merge m:1 date using "FamaFrench.dta", nogen keep(3) ///
 		keepus(year month datem *A)
 
 	xtset permno datem
@@ -148,9 +149,11 @@ if `clean' == 1 {
 		forval x = 2/12 { // calculate cumulative return at that month of the year so far
 			replace ret_cumul = l.ret_cumul*ret_plus1 if month == `x' & month > min_mon
 		}
-		gen retA = ret_cumul^(12/n_mons) // compound to 12 months based on number
+		gen retA = ret_cumul^(12/n_mons) if month == max_mon 
+									// compound to 12 months based on number
 									// of months already factored in (e.g. 6-month
 									// returns should be squared)
+			bys permno year (date): ereplace retA = max(retA)
 		replace ret_cumul = ret_cumul - 1 // want r not 1+r
 		replace retA = retA - 1
 
@@ -164,6 +167,8 @@ if `clean' == 0 & `resids' == 1 use "Abnormal_Returns/returns_annualized.dta", c
 *======================================================================
 if `resids' == 1 {
 *-------------------
+	keep if year >= 1960
+
 	foreach A in "" "A" { // first using monthly returns then annualized returns
 
 	*winsor ret`A', p(0.025) gen(retA_w)
@@ -186,8 +191,8 @@ if `resids' == 1 {
 			local x = 4
 		}
 		if "`model'" == "Liq5" {
-			local rhs "mktrf`A' smb`A' hml`A' umd`A' ps_vwf`A' if inrange(ret`A', `pct01', `pct99') & year <= 2017"
-				// liquidity only available up through 2017
+			local rhs "mktrf`A' smb`A' hml`A' umd`A' ps_vwf`A' if inrange(ret`A', `pct01', `pct99') & inrange(year, 1963, 2017)"
+				// liquidity only available Aug 1962 - Dec 2017
 			local x = 5
 		}
 
@@ -290,6 +295,7 @@ if `variance' == 1 {
 
 	merge 1:1 lpermno datadate using `cpu', keepus(niq oibdpq)
 		gen year = int(datadate/10000) // first four digits
+		keep if year >= 1960
 		
 		bys lpermno year: egen ret_sd = sd(ret)
 		rangestat (skewness) ret_skew = ret, interval(year 0 0) by(lpermno)
@@ -313,11 +319,13 @@ if `growth' == 1 {
 		using "Abnormal_Returns/returns_annualized.dta", clear
 
 	ren permno lpermno
-	destring date, gen(datadate)
-	merge 1:1 lpermno datadate using "Compustat-CRSP_Merged_Annual.dta", ///
-		nogen keepus(sic aqc capx revt xsga do csho prcc_c) keep(3)
+	gen month = substr(date, 5, 2)
+		destring month, replace
 
-	sort lpermno datadate // sometimes more than one ob per firm-year
+	merge 1:1 lpermno year month using "Compustat-CRSP_Merged_Annual.dta", ///
+		keepus(sic aqc capx revt xsga do csho prcc_c) nogen keep(3)
+
+	sort lpermno year month // sometimes more than one ob per firm-year
 		collapse (last) retA sic aqc capx revt xsga do csho prcc_c, by(lpermno year) fast
 
 	gen mktcap = prcc_c*csho
@@ -450,8 +458,52 @@ if `growth' == 1 {
 		  firm_do_rev? firm_do_rev?? ind_vw_do_rev? ind_vw_do_rev?? ind_m_do_rev? ind_m_do_rev??;
 	#delimit cr
 
-
+	save "Abnormal_Returns/firm_year_growth_and_compounded_rets.dta", replace
 		  
 
 } // end growth section
+*=======================================================================
+
+*======================================================================
+* COMPUTE FIRM- AND INDUSTRY-LEVEL COMPOUNDED RETURNS & GROWTH RATES
+*======================================================================
+if `portfolio' == 1 {
+*-------------------
+	use "Abnormal_Returns/portfolio years.dta", clear
+		bys gvkey: gen group = _n
+		reshape long year, i(gvkey group) j(j) string
+		egen id = group(gvkey group)
+		xtset id year
+		tsfill
+			bys id (year): ereplace gvkey = mode(gvkey)
+			keep gvkey year
+			duplicates drop
+		destring gvkey, replace
+		tempfile pf_years
+		save `pf_years', replace
+
+	use permno year retA month max_mon ///
+		using "Abnormal_Returns/returns_annualized.dta", clear
+	ren permno lpermno
+	keep if month == max_mon
+	merge 1:1 lpermno year month using "Compustat-CRSP_Merged_Annual.dta", ///
+		nogen keep(3) keepus(gvkey csho prcc_c)
+	
+	merge m:1 gvkey year using `pf_years', keep(2 3)
+		gen firms_in_portfolio = _merge == 3
+		gen not_merged = _merge == 2
+	gen mktcap = csho*prcc_c
+		lab var mktcap "Market Capitalization ($ MM)"
+
+	bys year: egen tot_mktcap = total(mktcap)
+	gen wt = mktcap/tot_mktcap
+		bys year: egen check = total(wt)
+		assert inrange(check, 0.999, 1.001)
+	gen retA_vw = retA * wt
+
+	collapse (mean) retA_eqw = retA (sum) retA_vw ///
+			 (sum) firms_in_portfolio not_merged, by(year) fast
+
+
+} // end portfolio section
 *=======================================================================
