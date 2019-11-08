@@ -13,8 +13,8 @@ cap log close
 pause on
 
 
-local import 0
-local dea 1
+local import 1
+local dea 0
 
 
 global repo "../Documents\GitHub\abnormal_returns"
@@ -33,6 +33,10 @@ if `import' == 1 {
 	save "Compustat-CRSP_Merged_Monthly.dta", replace
 	
 	import delimited "Compustat-CRSP_Merged_Annual.csv", clear varn(1)
+
+		gen year = int(datadate/10000)
+		gen month = int(mod(datadate/100, 100))
+
 		*For DEA Calculation of Firm Efficiency
 		lab var sale "Sales ($MM)"
 		lab var cogs "COGS ($MM)"
