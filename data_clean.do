@@ -34,12 +34,13 @@ clear all
 cap log close
 pause on
 
-local import 0
-local clean 0
-local resids 0
-local variance 0
-local growth 0
+local import 1
+local clean 1
+local resids 1
+local variance 1
+local growth 1
 local portfolio 1
+local cfsi 1
 
 global repo "C:\Users\lmostrom\Documents\GitHub\abnormal_returns"
 
@@ -106,6 +107,27 @@ if `import' == 1 {
 		lab var oibdpq "Op. Income before Depreciation - Quarterly ($ MM)"
 
 	save "Compustat-CRSP_Merged_Quarterly.dta", replace
+	*--------------------------------------------------------
+	*Import and save Compustat-CRSP Fundamentals A dataset
+	*--------------------------------------------------------
+	import delimited "Compustat-CRSP_Merged_Annual.csv", clear varn(1)
+		gen year = int(datadate/10000)
+		gen month = int(mod(datadate/100, 100))
+		lab var sale "Sales ($MM)"
+		lab var revt "Revenue - Total ($MM)"
+		lab var capx "Capital Expenditures ($MM)"
+		lab var xrd "R&D Expenditure ($MM)"
+		lab var aqc "Acquisitions (Cash Flow) ($MM)"
+		lab var ib "Income Before Extraordinary Items ($MM)"
+		lab var dp "Depreciation and Amortization Expense ($MM)"
+		lab var ppent "Property, Plant, and Equipment, Total Net ($MM)"
+		lab var lt "Total Debt ($MM)"
+		lab var at "Total Assets ($MM)"
+		lab var ch "Cash ($MM)"
+		lab var aoloch "Cash from PPE Sales ($MM)"
+
+
+	save "Compustat-CRSP_Merged_Annual.dta", replace
 	*--------------------------------------------------------
 	*Import and save Compustat-CRSP Linking Table
 	*--------------------------------------------------------
@@ -507,4 +529,150 @@ if `portfolio' == 1 {
 	save "portfolio_subset_returns.dta", replace
 
 } // end portfolio section
+*=======================================================================
+
+*======================================================================
+* NOW COMPUTE CASH FLOW-INVESTMENT SENSITIVITY & OVER/UNDER-INVESTMENT
+* (see Biddle & Hilary 2006)
+*======================================================================
+if `cfsi' == 1 {
+*-------------------
+	use lpermno sic year month ///
+		revt capx ib dp ppent xrd capx aqc aoloch lt at ch sale ///
+	  using "Compustat-CRSP_Merged_Annual.dta", clear
+	
+	duplicates tag lpermno year, gen(dup)
+	bys lpermno year: egen dup_himon = max(month) if dup
+	drop if dup & month < dup_himon
+	drop dup dup_himon
+
+	foreach var of varlist xrd aoloch aqc {
+		replace `var' = 0 if `var' == .
+	}
+
+	xtset lpermno year
+	gen cf_K = (ib+dp)/l.ppent
+		lab var cf_K "Cash Flow divided by Beg-of-Pd Net Capital"
+		replace cf_K = 0 if cf_K < 0 // see Biddle & Hilary p. 979
+	gen inv_K = capx/l.ppent
+		lab var inv_K "Capex divided by Beg-of-Pd Net Capital"
+	gen lev = lt/at
+		lab var lev "Leverage (TD/TA)"
+
+	gen cash_rank = .
+	gen lev_rank = .
+	gen cfwai = .
+
+	forval yr = 1975/2018 {
+		local yr_10 = `yr' - 10
+		bys lpermno: egen cf_past10 = total(cf_K) if inrange(year, `yr_10', `yr')
+		gen inv_wtd = inv_K*cf_K/cf_past10
+		bys lpermno: egen cfwai_temp = total(inv_wtd) if inrange(year, `yr_10', `yr')
+		replace cfwai = cfwai_temp if year == `yr'
+
+		xtile cash_xt = ch if year == `yr', n(10)
+			replace cash_rank = cash_xt if year == `yr'
+		xtile lev_xt = lev if year == `yr', n(10)
+			replace lev_rank = lev_xt if year == `yr'
+
+		drop cf_past10 inv_wtd cfwai_temp cash_xt lev_xt
+	}
+
+	rangestat (mean) ai = inv, i(year -10 0) by(lpermno)
+
+	gen cfsi = cfwai - ai if !inlist(cfwai, 0, .)
+		lab var cfsi "Cash Flow Sensitivity to Investment"
+
+	*-------------------------------------------------------------------
+	* Biddle, Hilary, Verdi: investment vars & over-investment measures
+	*-------------------------------------------------------------------
+	gen invBHV = (xrd + capx + aqc - aoloch)/l.at * 100
+	gen capexBHV = capx/l.ppent * 100
+	gen noncapexBHV = (xrd + aqc)/l.at * 100
+
+	replace cash_rank = cash_rank/10
+	replace lev_rank = lev_rank/10
+	assert inrange(cash_rank, 0, 1) | cash_rank == .
+
+	// Firm-Level
+	gen overfirm = (cash_rank + lev_rank)/2
+
+	// Industry-Level
+	merge m:1 sic using "FamaFrench48.dta", gen(ff_merge) keep(1 3)
+		/* Filling in SIC codes not assigned by the Fama French 48 industry document
+		based on https://www.eeoc.gov/eeoc/statistics/employment/jobpat-eeo1/siccodes.cfm */
+		* Fishing, hunting, trapping
+		replace ff48 = 6 if ff48 == . & sic == 900
+			replace ff48_name = "Recreation" if ff48 == 6 & ff48_name == ""
+		* Miscellaneous Manufactures, Unknown
+		replace ff48 = 48 if ff48 == . & inlist(sic, 3990, 6797, 9995, 9997)
+			replace ff48_name = "Other" if ff48 == 48 & ff48_name == ""
+		assert ff48 != .
+	preserve
+		#delimit ;
+		collapse (sum) invBHV_ind = invBHV
+					   capexBHV_ind = capexBHV
+					   noncapexBHV_ind = noncapexBHV
+					   sale_ind = sale, by(ff48 year) fast;
+		#delimit cr
+		xtset ff48 year
+		gen salesg_ind = (sale_ind - l.sale_ind)/l.sale_ind
+
+		reg invBHV_ind salesg_ind
+			predict resid_ind, residuals
+			gen overind = .
+			pause
+			forval yr = 1975/2018 {
+				xtile overind_xt = resid_ind if year == `yr', n(10)
+				replace overind = overind_xt if year == `yr'
+				drop overind_xt
+			}
+			replace overind = overind/10
+			assert inrange(overind, 0, 1) | overind == .
+
+		tempfile overindustry
+		save `overindustry', replace
+	restore
+
+	merge m:1 ff48 year using `overindustry', nogen keepus(overind)
+
+	//Aggregate-Level
+	preserve
+		#delimit ;
+		collapse (sum) invBHV_agg = invBHV
+					   capexBHV_agg = capexBHV
+					   noncapexBHV_agg = noncapexBHV
+					   sale_agg = sale, by(year) fast;
+		#delimit cr
+		tsset year
+		gen salesg_agg = (sale_agg - l.sale_agg)/l.sale_agg
+
+		reg invBHV_agg salesg_agg
+			predict resid_agg, residuals
+			xtile overagg = resid_agg, n(10)
+			replace overagg = overagg/10
+			assert inrange(overagg, 0, 1) | overagg == .
+
+		tempfile overaggregate
+		save `overaggregate', replace
+	restore
+
+	merge m:1 year using `overaggregate', nogen keepus(overagg)
+
+
+	*-------------------------------------------------------------------
+	* Cumulative Average Revenue
+	*-------------------------------------------------------------------
+	keep if year >= 1975
+		rangestat (mean) cum_avg_rev = revt, i(year . 0) by(lpermno)
+
+	*-------------------------------------------------------------------
+	keep lpermno year cfsi cum_avg_rev overfirm overind overagg
+		lab var cum_avg_rev "Cumulative Avg Revenue"
+		lab var overfirm "Firm propensity to over-invest"
+		lab var overind "Industry propensity to over-invest"
+		lab var overagg "Economy-wide propensity to over-invest"
+	save "investment_efficiency_measures.dta", replace
+
+} // end cash flow-investment sensitivity section
 *=======================================================================

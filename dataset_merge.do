@@ -40,6 +40,8 @@ cd "C:/Users/lmostrom/Dropbox/Abnormal_Returns/"
 
 	merge m:1 lpermno year using firm_year_sds_and_skewness.dta, nogen;
 
+	merge m:1 lpermno year using ../investment_efficiency_measures.dta, nogen;
+
 	drop retA_wtd ind_m_retA;
 
 order lpermno gvkey date year month fyear ff48 ff48_name mktcap wt
@@ -47,7 +49,8 @@ order lpermno gvkey date year month fyear ff48 ff48_name mktcap wt
 		ret_sd ret_skew niq_sd oibdpq_sd
 		*M1* *M3* *M4* *M5*
 		*ret* *rev_g* *capxsga_rev* *aqc_rev* *do_rev*
-		ME ME_pct BEtoME BM_pct OP OP_pct pf_*;
+		ME ME_pct BEtoME BM_pct OP OP_pct pf_*
+		cfsi cum_avg_rev overfirm overind overagg;
 
 
 #delimit cr
