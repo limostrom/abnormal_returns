@@ -39,6 +39,7 @@ if `import' == 1 {
 
 		*For DEA Calculation of Firm Efficiency
 		lab var sale "Sales ($MM)"
+		lab var revt "Revenue - Total ($MM)"
 		lab var cogs "COGS ($MM)"
 		lab var xsga "Selling, General & Admin Expense ($MM)"
 		lab var ppent "Property, Plant & Equipment ($MM)"
@@ -60,6 +61,12 @@ if `import' == 1 {
 		lab var capx "Capital Expenditures ($MM)"
 		lab var fca "Foreign Currency Adjustment (Income Account) ($MM)"
 
+		*For Calculation of Cash Flow-Investment Sensitivity
+		lab var ib "Income Before Extraordinary Items ($MM)"
+		lab var dp "Depreciation and Amortization Expense ($MM)"
+		lab var ppent "Property, Plant, and Equipment, Total Net ($MM)"
+
+
 	save "Compustat-CRSP_Merged_Annual.dta", replace
 	
 	import delimited "Execucomp.csv", clear varn(1)
@@ -75,7 +82,7 @@ if `import' == 1 {
 *=======================================================================
 if `dea' == 1 {
 	use gvkey sic datadate fyear linkprim ///
-		sale cogs xsga ppent mrc? xrd gdwl intan ///
+		revt cogs xsga ppent mrc? xrd gdwl intan ///
 		at oibdp rect invt aco ap lco capx fca ///
 	  using "Compustat-CRSP_Merged_Annual.dta", clear
 		drop if at == .
@@ -133,7 +140,7 @@ if `dea' == 1 {
 	* DEA Model
 	*	(www.cgdev.org/sites/default/files/archive/doc/stata/MO/DEA/dea_in_stata.pdf)
 	forval ff = 1/47 {
-		dea cogs xsga ppent ops_leases rd_net gdwl oth_intan = sale ///
+		dea cogs xsga ppent ops_leases rd_net gdwl oth_intan = revt ///
 			if ff48 == `ff', ///
 			saving("Abnormal_Returns/FirmEfficiency_ind`ff'.dta", replace)
 		dis("Industry `ff'")

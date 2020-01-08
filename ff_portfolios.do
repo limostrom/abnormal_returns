@@ -34,8 +34,8 @@ pause on
 global repo "C:/Users/lmostrom/Documents\GitHub\abnormal_returns"
 cap cd "C:\Users\lmostrom\Dropbox\Abnormal_Returns"
 
-local import 0 // import portfolio returns CSVs and breakpoint CSVs
-local cpu_merge 0 // merge with Compustat-CRSP pre-merged dataset
+local import 1 // import portfolio returns CSVs and breakpoint CSVs
+local cpu_merge 1 // merge with Compustat-CRSP pre-merged dataset
 local brkpt_merge 1 // merge with percentile breakpoints
 local ff_merge 1 // merge with Fama-French portfolio returns datasets
 
@@ -302,9 +302,9 @@ if `cpu_merge' == 1 {
 
 	* First merge in income statement variables and closing prices (year t)
 	merge 1:1 lpermno fyear using `compucrspA', keep(1 3) gen(cpu_merge) ///
-		keepus(sale cogs xsga xint sic gvkey)
+		keepus(revt cogs xsga xint sic gvkey)
 
-		lab var sale "Sales ($ MM)"
+		lab var revt "Revenue - Total ($ MM)"
 		lab var cogs "Cost of Goods Sold ($ MM)"
 		lab var xsga "Selling, General & Admin Expense ($ MM)"
 		lab var xint "Interest Expense ($ MM)"
@@ -349,7 +349,7 @@ if `cpu_merge' == 1 {
 		replace xsga = 0 if xsga == . & has_costs >= 1
 		replace xint = 0 if xint == . & has_costs >= 1
 
-	gen OP = (sale - cogs - xsga - xint)/seq if sale != . & has_costs >= 1
+	gen OP = (revt - cogs - xsga - xint)/seq if revt != . & has_costs >= 1
 
 		lab var OP "Operating Profitability"
 
