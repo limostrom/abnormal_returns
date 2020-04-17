@@ -42,6 +42,8 @@ cd "C:/Users/lmostrom/Dropbox/Abnormal_Returns/"
 
 	merge m:1 lpermno year using ../investment_efficiency_measures.dta, nogen;
 
+	merge m:1 lpermno year using ../real_earnings_management_measures.dta, nogen;
+
 	drop retA_wtd ind_m_retA;
 
 order lpermno gvkey date year month fyear ff48 ff48_name mktcap wt
@@ -50,7 +52,8 @@ order lpermno gvkey date year month fyear ff48 ff48_name mktcap wt
 		*M1* *M3* *M4* *M5*
 		*ret* *rev_g* *capxsga_rev* *aqc_rev* *do_rev*
 		ME ME_pct BEtoME BM_pct OP OP_pct pf_*
-		cfsi cum_avg_rev overfirm overind overagg;
+		cfsi cum_avg_rev overfirm overind overagg
+		r_cfo r_prod r_disx rm_proxy;
 
 
 #delimit cr
@@ -62,5 +65,9 @@ lab var ret_sd "standard deviation of monthly firm returns over the year"
 lab var ret_skew "skewness of monthly firm returns over the year"
 lab var niq_sd "standard deviation of quarterly net income over this and the past 2 years"
 lab var oibdpq_sd "standard deviation of quarterly operating income over this and the past 2 years"
+lab var r_cfo "Abnormal Cash Flows from Operations / L.Assets"
+lab var r_prod "Abnormal Production Costs / L.Assets"
+lab var r_disx "Abnormal Discretionary Expenses / L.Assets"
+lab var rm_proxy "Proxy for Real Earnings Management (CFO+PROD+DISX)"
 
 save "master.dta", replace
