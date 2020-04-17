@@ -34,13 +34,14 @@ clear all
 cap log close
 pause on
 
-local import 1
-local clean 1
-local resids 1
-local variance 1
-local growth 1
-local portfolio 1
-local cfsi 1
+local import 0
+local clean 0
+local resids 0
+local variance 0
+local growth 0
+local portfolio 0
+local cfsi 0
+local rem 1
 
 global repo "C:\Users\lmostrom\Documents\GitHub\abnormal_returns"
 
@@ -115,8 +116,13 @@ if `import' == 1 {
 		gen month = int(mod(datadate/100, 100))
 		lab var sale "Sales ($MM)"
 		lab var revt "Revenue - Total ($MM)"
+		lab var oancf "Operating Activities - Net CF ($MM)"
+		lab var xidoc "Ext. Items and Discont. Ops ($MM)"
 		lab var capx "Capital Expenditures ($MM)"
+		lab var xad "Advertising Expense ($MM)"
 		lab var xrd "R&D Expenditure ($MM)"
+		lab var xsga "Selling, General & Admin Expense ($MM)"
+		lab var invt "Total Inventory ($MM)"
 		lab var aqc "Acquisitions (Cash Flow) ($MM)"
 		lab var ib "Income Before Extraordinary Items ($MM)"
 		lab var dp "Depreciation and Amortization Expense ($MM)"
@@ -675,4 +681,78 @@ if `cfsi' == 1 {
 	save "investment_efficiency_measures.dta", replace
 
 } // end cash flow-investment sensitivity section
+*=======================================================================
+
+*======================================================================
+* NOW COMPUTE MEASURES OF REAL EARNINGS MANAGEMENT TO CONTROL FOR
+*   NON-OPERATIONS-RELATED INVESTMENT DECISIONS
+* (see Cohen Dey Lys 2008)
+*======================================================================
+if `rem' == 1 {
+*-------------------
+	use lpermno sic year month ///
+		sale at oancf xidoc cogs invt xad xrd xsga ///
+	  using "Compustat-CRSP_Merged_Annual.dta", clear
+
+	duplicates tag lpermno year, gen(dup)
+	bys lpermno year: egen dup_himon = max(month) if dup
+	drop if dup & month < dup_himon
+	drop dup dup_himon
+
+	foreach var of varlist oancf xidoc cogs invt xad xrd xsga {
+		replace `var' = 0 if `var' == .
+	}
+
+	merge m:1 sic using "FamaFrench48.dta", gen(ff_merge) keep(1 3)
+		/* Filling in SIC codes not assigned by the Fama French 48 industry document
+		based on https://www.eeoc.gov/eeoc/statistics/employment/jobpat-eeo1/siccodes.cfm */
+		* Fishing, hunting, trapping
+		replace ff48 = 6 if ff48 == . & sic == 900
+			replace ff48_name = "Recreation" if ff48 == 6 & ff48_name == ""
+		* Miscellaneous Manufactures, Unknown
+		replace ff48 = 48 if ff48 == . & inlist(sic, 3990, 6797, 9995, 9997)
+			replace ff48_name = "Other" if ff48 == 48 & ff48_name == ""
+		assert ff48 != .
+	xtset lpermno year
+
+	gen dsale = sale - l.sale
+	gen Lsale = l.sale
+	gen dLsale = l.sale - l2.sale
+	gen dinvt = invt - l.invt
+	gen cfo = oancf - xidoc
+	gen prod = cogs + dinvt
+		lab var prod "Production Costs (COGS + dINVT) ($MM)"
+	gen disx = xad + xrd + xsga
+		lab var disx "Discretionary Expenses (XAD+XRD+XSGA) ($MM)"
+
+	foreach var of varlist cfo prod disx sale dsale Lsale dLsale {
+		gen `var'_scaled = `var'/l.at // scaled by lagged tot assets
+	}
+
+	bys ff48 year: reg cfo_scaled sale_scaled dsale_scaled
+		predict pred_cfo_scaled, xb
+		xtset lpermno year
+		gen pred_cfo = pred_cfo_scaled * l.at
+		gen r_cfo = cfo_scaled - pred_cfo_scaled
+
+	bys ff48 year: reg prod_scaled sale_scaled dsale_scaled dLsale_scaled
+		predict pred_prod_scaled, xb
+		xtset lpermno year
+		gen pred_prod = pred_prod_scaled * l.at
+		gen r_prod = prod_scaled - pred_prod_scaled
+
+	bys ff48 year: reg disx_scaled Lsale_scaled
+		predict pred_disx_scaled, xb
+		xtset lpermno year
+		gen pred_disx = pred_disx_scaled * l.at
+		gen r_disx = disx_scaled - pred_disx_scaled
+		
+	gen rm_proxy = r_cfo + r_prod + r_disx
+
+	keep lpermno year r_cfo r_prod r_disx rm_proxy
+	save "real_earnings_management_measures.dta", replace
+
+
+
+} // end real earnings management section
 *=======================================================================
