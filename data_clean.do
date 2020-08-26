@@ -19,14 +19,17 @@ Fama French factors
 
 -merge the two files by date
 -compute compounded values for all measures
--estimate several regression models by year and save the residuals for each firm year
+-estimate several regression models by year and save the residuals for each
+	firm year
 -we would like to estimate:
 	-CAPM
 	-Fama-French 3 factor model
 	-Carhart 4 factor model
 	-5 factor model with a liquidity factor
--once the residuals are computed, create binary measures for whether they are in the top 10% of values or the bottom 10% of values
--the final dataset can include the permno, year, and the residual under each model for all available firm years
+-once the residuals are computed, create binary measures for whether they are in
+	the top 10% of values or the bottom 10% of values
+-the final dataset can include the permno, year, and the residual under each
+	model for all available firm years
 
 */
 
@@ -38,10 +41,21 @@ local import 0
 local clean 0
 local resids 0
 local variance 0
+local performance 0
+local volatility 0 // Pan et al. CEO learning paper
+local mw_and_tlr 0 //Doyle et al. 2007 Material Weakness
 local growth 0
-local portfolio 0
 local cfsi 0
-local rem 1
+local rem 0
+local betas 0
+local patents 0
+local overconfidence 0
+local ind_dir_to 1
+local misc 0
+
+local merge_vars 1
+
+local portfolio 0
 
 global repo "C:\Users\lmostrom\Documents\GitHub\abnormal_returns"
 
@@ -104,8 +118,12 @@ if `import' == 1 {
 	*Import and save Compustat-CRSP Fundamentals Q dataset
 	*--------------------------------------------------------
 	import delimited "Compustat-CRSP_Merged_Quarterly.csv", clear varn(1)
-		lab var niq "Net Income - Quarterly ($ MM)"
-		lab var oibdpq "Op. Income before Depreciation - Quarterly ($ MM)"
+		lab var niq "Net Income - Fiscal Quarter ($ M)"
+		lab var oibdpq "Op. Income before Depreciation - Fiscal Quarter ($ M)"
+		lab var atq "Total Assets - Fiscal Quarter ($ M)"
+		lab var ltq "Total Liabilities - Fiscal Quarter ($ M)"
+		lab var revtq "Total Revenue - Fiscal Quarter ($ M)"
+		lab var capxy "Capex Year-to-Date ($ M)"
 
 	save "Compustat-CRSP_Merged_Quarterly.dta", replace
 	*--------------------------------------------------------
@@ -114,26 +132,43 @@ if `import' == 1 {
 	import delimited "Compustat-CRSP_Merged_Annual.csv", clear varn(1)
 		gen year = int(datadate/10000)
 		gen month = int(mod(datadate/100, 100))
-		lab var sale "Sales ($MM)"
-		lab var revt "Revenue - Total ($MM)"
-		lab var oancf "Operating Activities - Net CF ($MM)"
-		lab var xidoc "Ext. Items and Discont. Ops ($MM)"
-		lab var capx "Capital Expenditures ($MM)"
-		lab var xad "Advertising Expense ($MM)"
-		lab var xrd "R&D Expenditure ($MM)"
-		lab var xsga "Selling, General & Admin Expense ($MM)"
-		lab var invt "Total Inventory ($MM)"
-		lab var aqc "Acquisitions (Cash Flow) ($MM)"
-		lab var ib "Income Before Extraordinary Items ($MM)"
-		lab var dp "Depreciation and Amortization Expense ($MM)"
-		lab var ppent "Property, Plant, and Equipment, Total Net ($MM)"
-		lab var lt "Total Debt ($MM)"
-		lab var at "Total Assets ($MM)"
-		lab var ch "Cash ($MM)"
-		lab var aoloch "Cash from PPE Sales ($MM)"
-
+		lab var sale "Sales ($ M)"
+		lab var revt "Revenue - Total ($ M)"
+		lab var ni "Net Income ($ M)"
+		lab var oibd "Operating Income Before Depreciation ($ M)"
+		lab var oiad "Operating Income After Depreciation ($ M)"
+		lab var oancf "Operating Activities - Net CF ($ M)"
+		lab var xidoc "Ext. Items and Discont. Ops ($ M)"
+		lab var capx "Capital Expenditures ($ M)"
+		lab var xad "Advertising Expense ($ M)"
+		lab var xrd "R&D Expenditure ($ M)"
+		lab var xsga "Selling, General & Admin Expense ($ M)"
+		lab var invt "Total Inventory ($ M)"
+		lab var aqc "Acquisitions (Cash Flow) ($ M)"
+		lab var do "Discontinued Operations ($ M)"
+		lab var ib "Income Before Extraordinary Items ($ M)"
+		lab var dp "Depreciation and Amortization Expense ($ M)"
+		lab var ppent "Property, Plant, and Equipment, Total Net ($ M)"
+		lab var ppegt "PP&E (Gross) - Total ($ M)"
+		lab var lt "Total Liabilities ($ M)"
+		lab var dlc "Debt in Current Liabilities ($ M)"
+		lab var dltt "Long-Term Debt - Total ($ M)"
+		lab var at "Total Assets ($ M)"
+		lab var ch "Cash ($ M)"
+		lab var aoloch "Cash from PPE Sales ($ M)"
+		lab var csho "Common Shares Outstanding - Company (Millions)"
+		lab var prcc_f "Price - Fiscal Year - Close ($)" 
+		lab var ib "Income Before Extraordinary Items ($ M)"
+		lab var fca "Foreign Currency Adjustment ($ M)"
+		lab var rcp "Restructuring Costs Pretax"
+		lab var emp "Employees (Thousands)"
 
 	save "Compustat-CRSP_Merged_Annual.dta", replace
+	*--------------------------------------------------------
+	*Import and save Compustat-CRSP Historical Segments
+	*--------------------------------------------------------
+	import delimited "Compustat-CRSP_Merged_HSegments.csv", clear varn(1)
+	save "Compustat-CRSP_Merged_HSegments.dta", replace
 	*--------------------------------------------------------
 	*Import and save Compustat-CRSP Linking Table
 	*--------------------------------------------------------
@@ -154,7 +189,63 @@ if `import' == 1 {
 
 	save "CRSP_ret_dlstcd.dta", replace
 	*--------------------------------------------------------
+	*Capital IQ Key Developments
+	*--------------------------------------------------------
+	import delimited "CapitalIQ_KeyDevelopments_05_19.csv", clear varn(1) ///
+				bindquote(strict) maxquotedrows(0)
+		tempfile ciq19
+		save `ciq19', replace
+	import delimited "CapitalIQ_KeyDevelopments_03_04.csv", clear varn(1) ///
+				bindquote(strict) maxquotedrows(0)
+		tempfile ciq04
+		save `ciq04', replace
+	import delimited "CapitalIQ_KeyDevelopments_92_02.csv", clear varn(1) ///
+				bindquote(strict) maxquotedrows(0)
+		append using `ciq04'
+		append using `ciq19'
+
+	save "CapitalIQ_KeyDevelopments.dta", replace
+	*--------------------------------------------------------
+	*Execucomp Options
+	*--------------------------------------------------------
+	import delimited "Execucomp_Options.csv", clear varn(1)
+		ren year fyear // confirmed, actually fiscal year not calendar year
+		lab var blkshval "Black-Scholes Value"
+		lab var expric "Exercise Price"
+		lab var mktpric "Market Price of Stock on Date of Grant"
+		lab var pcttotopt "Percent of Total Options Granted to Employees"
+		lab var numsecur "Number of Options Granted"
+		lab var exdate "Expiration Date"
+		lab var leftofc "Date Left as CEO"
+	
+	save "Execucomp_Options.dta", replace
+	*--------------------------------------------------------
+	*Execucomp Outstanding Equity
+	*--------------------------------------------------------
+	import delimited "Execucomp_OutsEq.csv", clear varn(1)
+		ren year fyear // confirmed, actually fiscal year not calendar year
+		lab var expric "Exercise Price"
+		lab var opts_unex_exer "# of unexercised options held at FY end that had vested"
+		lab var opts_unex_unexer "# of unexercised options held at FY end that had NOT vested"
+		lab var shrs_unvest_num "# of shares that had not vested"
+		lab var shrs_unvest_val "Mkt. val. of shares that had not vested"
+		
+	save "Execucomp_OutsEq.dta", replace
+	*--------------------------------------------------------
+	*Execucomp Annual Compensation
+	*--------------------------------------------------------
+	import delimited "Execucomp_AnnComp.csv", clear varn(1)
+		ren year fyear // confirmed, actually fiscal year not calendar year
+		lab var opt_unex_exer_est_val ""
+		lab var shrown_excl_opts "Shares Owned (Excl. Opts)"
+		lab var shrown_excl_opts_pct "Percentage of Total Shares Owned (Excl. Opts)"
+		lab var opt_unex_exer_est_val "Est. Val. of In-the-Money Unexercised Exercisable Options"
+		lab var opt_unex_unexer_est_val "Est. Val. of In-the-Money Unexercised Unexercisable Options"
+		
+	save "Execucomp_AnnComp.dta", replace
+	*--------------------------------------------------------
 } // end import section
+
 *------------------------------------------------------------
 if `import' == 0 & `clean' == 1 use permno date ret dlstcd using "CRSP_ret_dlstcd.dta", clear
 *=======================================================================
@@ -284,54 +375,40 @@ if `resids' == 1 {
 *======================================================================
 if `variance' == 1 {
 *-------------------
-	use gvkey lpermno linkdt linkenddt using "Compustat-CRSP_Link.dta", clear
-		bys gvkey: gen n = _n
-			qui summ n
-			local X = r(max)
-		reshape wide lpermno linkdt linkenddt, i(gvkey) j(n)
-		tempfile link
-		save `link', replace
+	use lpermno datadate fyearq fqtr niq oibdpq ///
+		using "Compustat-CRSP_Merged_Quarterly.dta", clear
+	bys lpermno datadate: egen max_qtr = max(fqtr)
+		drop if fqtr < max_qtr
+	isid lpermno datadate
 
-	use gvkey datadate fyr niq oibdpq using CompustatQ, clear
-		duplicates tag gvkey datadate, gen(dup)
-			tab dup
-			local dups = r(r) == 2
-		while `dups' == 1 {
-			bys gvkey (datadate): gen to_drop = (fyr != fyr[_n+2])
-			drop if dup & to_drop
-				drop dup to_drop
-			duplicates tag gvkey datadate, gen(dup)
-				tab dup
-				local dups = r(r) == 2
-				dis "`dups'"
-		}
-
+	merge m:1 lpermno datadate using "Compustat-CRSP_Merged_Monthly.dta", ///
+		keep(2 3) keepus(trt1m)
 		
-		gen lpermno = .
-		merge m:1 gvkey using `link', nogen keep(3)
-		forval x = 1/`X' {
-			replace lpermno = lpermno`x' if inrange(datadate, linkdt`x', linkenddt`x') ///
-				& lpermno == .
-		}
-		keep if lpermno != .
-		tempfile cpu
-		save `cpu', replace
-
-	use "CRSP_ret_dlstcd.dta", clear
-		ren permno lpermno
-		ren date datadate
-
-	merge 1:1 lpermno datadate using `cpu', keepus(niq oibdpq)
-		gen year = int(datadate/10000) // first four digits
-		keep if year >= 1960
+		gen datem = ym(int(datadate/10000),mod(int(datadate/100),100))	
+			format datem %tm
+	gen ret_plus1 = trt1m + 1
+	xtset lpermno datem
+	
+	gen retq = (l2.ret_plus1 * l.ret_plus1 * ret_plus1) - 1
+		lab var retq "Quarter Return"
+	keep if _merge == 3
+	drop _merge
+	
+	ren fyearq fyear
 		
-		bys lpermno year: egen ret_sd = sd(ret)
-		rangestat (skewness) ret_skew = ret, interval(year 0 0) by(lpermno)
+		bys lpermno fyear: egen retq_sd = sd(retq)
+		rangestat (skewness) retq_skew = retq, interval(fyear 0 0) by(lpermno)
+		rangestat (kurtosis) retq_kurtosis = retq, interval(fyear 0 0) by(lpermno)
 
-		rangestat (sd) niq_sd = niq, interval(year -2 0) by(lpermno)
-		rangestat (sd) oibdpq_sd = oibdpq, interval(year -2 0) by(lpermno)
+		rangestat (sd) niq_sd = niq, interval(fyear -2 0) by(lpermno)
+		rangestat (sd) oibdpq_sd = oibdpq, interval(fyear -2 0) by(lpermno)
 
-	collapse (last) ret_sd ret_skew niq_sd oibdpq_sd, by(lpermno year) fast
+	collapse (last) retq_sd retq_skew retq_kurtosis niq_sd oibdpq_sd, by(lpermno fyear) fast
+		lab var retq_sd "St Dev of Quarterly Returns"
+		lab var retq_skew "Skewness of Quarterly Returns"
+		lab var retq_kurtosis "Kurtosis of Quarterly Returns"
+		lab var niq_sd "St Dev of Quarterly Net Income"
+		lab var oibdpq_sd "St Dev of Quarterly Op. Inc. (Before Depreciation)"
 
 	save "Abnormal_Returns/firm_year_sds_and_skewness.dta", replace
 
@@ -339,8 +416,469 @@ if `variance' == 1 {
 *=======================================================================
 
 *======================================================================
-* COMPUTE FIRM- AND INDUSTRY-LEVEL COMPOUNDED RETURNS & GROWTH RATES
+* CREATE A DATASET OF PERFORMANCE METRICS
 *======================================================================
+if `performance' == 1 {
+*-------------------
+	use gvkey year using "Execucomp.dta", clear
+		duplicates drop
+		tempfile exec_subset
+		save `exec_subset', replace
+
+	use gvkey lpermno datadate fyear sic revt ni oibdp oiadp ///
+			at lt oancf rect invt aco ppent intan ao ap lco lo ///
+		using "Compustat-CRSP_Merged_Annual.dta", clear
+	levelsof fyear, local(years)
+	
+	gen year = int(datadate/10000)
+	merge m:1 gvkey year using `exec_subset', gen(m_excomp) keep(1 3)
+	merge m:1 gvkey fyear using "Abnormal_Returns/tnic_ind_vars.dta", nogen keep(1 3) ///
+				keepus(*_tnic_indmed)
+	
+	drop if fyear == . & at == . & ni == .
+	duplicates drop
+	duplicates tag lpermno fyear, gen(dup)
+		sort lpermno datadate
+		drop if dup & datadate < datadate[_n+1] & lpermno == lpermno[_n+1]
+		
+	foreach var of varlist revt ni oibdp oiadp at lt oancf rect invt aco ///
+						ppent intan ao ap lco lo {
+		dis "`var'"
+		replace `var' = 0 if `var' == .
+	}
+		
+	isid lpermno fyear
+	xtset lpermno fyear
+	
+	ffind sic, newvar(ff17) type(17)
+	levelsof ff17, local(inds)
+	
+	gen at_p75 = .
+		lab var at_p75 "Tot. Assets > 75th pctl by industry"
+	foreach ind of local inds {
+		foreach fy of local years {
+			qui summ at if fyear == `fy' & ff17 == `ind', d
+			local p75 = r(p75)
+			replace at_p75 = (at > `p75') if fyear == `fy' & ff17 == `ind'
+		}
+	}
+	
+	gen roa = (ni/at)*100
+		lab var roa "Return on Assets (%)"
+	gen roa_exintan = (ni/(at-intan))*100
+		lab var roa "Return on Assets, excl. Intangibles (%)"
+	gen roe = ni/(at-lt)*100
+		lab var roe "Return on Equity (%)"
+	gen revgr = (revt/l.revt - 1)*100
+		lab var revgr "Revenue Growth (%)"
+	gen ombdp = (oibdp/revt)*100
+		lab var ombdp "Operating Margin (Before Depreciation) (%)"
+	gen omadp = (oiadp/revt)*100
+		lab var omadp "Operating Margin (After Depreciation) (%)"
+	gen earngr = (ni-l.ni)/(0.5*abs(ni)+0.5*abs(l.ni))*100
+		lab var earngr "Earnings Growth (%)"
+	gen cfogr = (oancf-l.oancf)/(0.5*abs(l.oancf)+0.5*abs(oancf))*100
+		lab var cfogr "Cash Flow from Operations Growth (%)"
+		
+	*RNOA, OMADP, and ATO from Li, Lundholm, and Minnis (2012)
+	gen noa = rect + invt + aco + ppent + intan + ao ///
+				- ap - lco - lo
+		lab var noa "Net Operating Assets"
+	gen noa_exintan = noa - intan
+		lab var noa_exintan "Net Operating Assets, excl. Intangibles"
+	gen rnoa = oiadp/noa
+		lab var rnoa "Return on Net Operating Assets (decimal)"
+	gen rnoa_exintan = oiadp/noa_exintan
+		lab var rnoa_exintan "Return on Net Operating Assets, excl. Intangibles (decimal)"
+	gen dF_rnoa = (f.oiadp - oiadp)/(noa-l.noa)
+		lab var dF_rnoa "(Change in OIADP t to t+1) / (Change in NOA t-1 to t)"
+	gen dF_rnoa_exintan = (f.oiadp - oiadp)/(noa_exintan-l.noa_exintan)
+		lab var dF_rnoa_exintan "(Change in OIADP t to t+1) / (Change in NOA excl. Intangibles t-1 to t)"
+	gen dL_rnoa = (oiadp - l.oiadp)/(l.noa-l2.noa)
+		lab var dL_rnoa "(Change in OIADP t-1 to t) / (Change in NOA t-2 to t-1)"
+	gen dL_rnoa_exintan = (oiadp - l.oiadp)/(l.noa_exintan-l2.noa_exintan)
+		lab var dL_rnoa_exintan "(Change in OIADP t-1 to t) / (Change in NOA excl. Intangibles t-2 to t-1)"
+	gen ato = revt/noa
+		lab var ato "Net Operating Asset Turnover Ratio"
+	gen ato_exintan = revt/noa_exintan
+		lab var ato "Net Operating Assets (excl. Intangibles) Turnover Ratio"
+			
+	foreach var of varlist roa roe rnoa revgr omadp ato ombdp earngr cfogr {
+		
+		egen `var'_pctl = xtile(`var'), nq(10) by(fyear)
+		gen `var'_topdec = `var'_pctl == 10 if `var'_pctl != .
+		gen `var'_bottomdec = `var'_pctl == 1 if `var'_pctl != .
+		
+		* TNIC
+		gen `var'_tnic_indadj = `var' - `var'_tnic_indmed
+			lab var `var'_tnic_indadj "`var' minus industry median (by year)"
+		egen `var'_tnic_indadj_pctl = xtile(`var'_tnic_indadj), nq(10) by(fyear)
+		gen `var'_tnic_indadj_topdec = `var'_tnic_indadj_pctl == 10 ///
+			if `var'_tnic_indadj_pctl != .
+		gen `var'_tnic_indadj_bottomdec = `var'_tnic_indadj_pctl == 1 ///
+			if `var'_tnic_indadj_pctl != .
+			
+		* Execucomp
+		bys ff17 fyear: egen `var'_exindmed = median(`var') if m_excomp == 3
+			lab var `var'_exindmed "Industry Median of `var' (by year among Execucomp firms)"
+		gen `var'_exindadj = `var' - `var'_exindmed if m_excomp == 3
+			lab var `var'_exindadj "`var' minus industry median (by year among Execucomp firms)"
+		egen `var'_exindadj_pctl = xtile(`var'_exindadj), nq(10) by(fyear)
+		gen `var'_exindadj_topdec = `var'_exindadj_pctl == 10 if `var'_exindadj_pctl != .
+		gen `var'_exindadj_bottomdec = `var'_exindadj_pctl == 1 if `var'_exindadj_pctl != .
+		
+		/* TNIC & Execucomp // Very few - industry groups as granular as 3 digit SICs
+		gen `var'_tnic_exindadj = `var' - `var'_tnic_exindmed if m_excomp1 == 3 & m_excomp2 == 3
+			lab var `var'_tnic_exindadj "`var' minus industry median (by year among Execucomp firms)"
+		egen `var'_tnic_exindadj_pctl = xtile(`var'_tnic_exindadj), nq(10) by(fyear)
+		gen `var'_tnic_exindadj_topdec = `var'_tnic_exindadj_pctl == 10 ///
+			if `var'_tnic_exindadj_pctl != .
+		gen `var'_tnic_exindadj_bottomdec = `var'_tnic_exindadj_pctl == 1 ///
+			if `var'_tnic_exindadj_pctl != . */
+		
+		* 25% Biggest Firms
+		bys fyear: egen `var'_atp75med = median(`var') if at_p75
+			bys fyear: ereplace `var'_atp75med = max(`var'_atp75med)
+			lab var `var'_atp75med "Median of `var' of Largest 25% of Firms (by year)"
+		gen `var'_atp75adj = `var' - `var'_atp75med
+			lab var `var'_atp75adj "`var' minus median of largest 25% of firms (by year)"
+		egen `var'_atp75adj_pctl = xtile(`var'_atp75adj), nq(10) by(fyear)
+		gen `var'_atp75adj_topdec = `var'_atp75adj_pctl == 10 if `var'_atp75adj_pctl != .
+		gen `var'_atp75adj_bottomdec = `var'_atp75adj_pctl == 1 if `var'_atp75adj_pctl != .
+	}
+
+	save "Abnormal_Returns/firm_year_performance.dta", replace
+
+*-----------------------------------------------------------------------
+	use gvkey lpermno datadate fyearq fqtr revtq niq oibdpq atq ltq oancfy ///
+		using "Compustat-CRSP_Merged_Quarterly.dta", clear
+	
+	drop if atq == . & ltq == . & niq == . & oibdpq == . & revtq == .
+	duplicates drop
+	gen fyq = yq(fyearq, fqtr)
+		format fyq %tq
+	duplicates tag lpermno fyq, gen(dup)
+		duplicates drop lpermno fyq, force // only drops 35
+		drop dup
+	isid lpermno fyq
+	xtset lpermno fyq
+	
+	gen roa = (niq/atq)*100
+		lab var roa "Return on Assets (%)"
+	gen roe = niq/(atq-ltq)*100
+		lab var roe "Return on Equity (%)"
+	gen revgr = (revtq/l4.revtq - 1)*100
+		lab var revgr "Revenue Growth (%)"
+	gen om = (oibdpq/revtq)*100
+		lab var om "Operating Margin (Before Depreciation) (%)"
+	gen earngr = (niq-l4.niq)/(0.5*abs(niq)+0.5*abs(l4.niq))*100
+		lab var earngr "Earnings Growth (%)"
+	gen cfogr = (oancfy-l4.oancfy)/(0.5*abs(l4.oancfy)+0.5*abs(oancfy))*100
+		lab var cfogr "Cash Flow from Operations Growth (%)"
+			
+	foreach var of varlist roa roe revgr om earngr cfogr {
+		bys lpermno fyearq: egen `var'_sd = sd(`var')
+		rangestat (skewness) `var'_skew = `var', interval(fyearq 0 0) by(lpermno)
+		rangestat (kurtosis) `var'_kurtosis = `var', interval(fyearq 0 0) by(lpermno)
+	}
+
+	save "Abnormal_Returns/firm_qtr_perf_skew.dta", replace
+	
+
+} // end performance section
+*=======================================================================
+
+*======================================================================
+* TENURE, VOLATILITY, and INDUSTRY VARIABLES
+*======================================================================
+if `volatility' == 1 {
+*-------------------
+
+	use gvkey lpermno datadate sic trt1m ///
+			using "Compustat-CRSP_Merged_Monthly.dta", clear
+	gen year = int(datadate/10000)
+	gen month = mod(int(datadate/100), 100)
+	gen datem = ym(year, month)
+		format %tm datem
+	
+	ffind sic, newvar(ff17) type(17)
+	levelsof ff17, local(inds)
+	
+	*Tenure
+	joinby gvkey year using "Execucomp.dta",
+		keep gvkey lpermno datadate year month datem sic ff17 ///
+				exec_fullname becameceo trt1m
+	keep if becameceo <= datadate
+		gen datem_ceostart = ym(int(becameceo/10000), mod(int(becameceo/100), 100))
+			format %tm datem_ceostart
+			
+	gen tenure = (datem - datem_ceostart)/12
+	
+	egen firmceo_id = group(lpermno exec_fullname)
+		duplicates tag lpermno exec_fullname, gen(dup)
+			drop if dup & exec_fullname == "Anthony Taylor" & becameceo == 20020102
+			drop dup
+		bys firmceo_id: gen firmceo_N = _N
+	
+	*Cumulative pre-inauguration return
+	gen ret_plus1 = trt1m + 1
+	bys ff17 datem: egen ret_indmed = median(trt1m)
+	merge m:1 gvkey datem using "Abnormal_Returns/tnic_ind_monthly.dta", nogen keep(1 3) keepus(ret_tnicmed)
+		gen ret_indadj = trt1m - ret_indmed
+		gen ret_tnicadj = trt1m - ret_tnicmed
+		gen ret_indadj_plus1 = ret_indadj + 1
+		gen ret_tnicadj_plus1 = ret_tnicadj + 1
+	
+	preserve
+		gen pre_months = .
+		gen cum_indadj_ret = .
+			lab var cum_indadj_ret "Cum. Ind-Adj. Return over 12 Months Prior to CEO Start"
+		gen cum_tnicadj_ret = .
+			lab var cum_tnicadj_ret "Cum. TNIC-Adj. Return over 12 Months Prior to CEO Start"
+		keep lpermno datem ret_indadj_plus1 ret_tnicadj_plus1 pre_months ///
+			cum_indadj_ret cum_tnicadj_ret
+		duplicates drop
+		xtset lpermno datem
+		
+		forval ii = 1/12 {
+			if `ii' == 1 replace cum_indadj_ret = l`ii'.ret_indadj_plus1
+			if `ii' > 1 replace cum_indadj_ret = cum_indadj_ret * l`ii'.ret_indadj_plus1 ///
+						if l`ii'.ret_indadj_plus1 != .
+						
+			if `ii' == 1 replace cum_tnicadj_ret = l`ii'.ret_tnicadj_plus1
+			if `ii' > 1 replace cum_tnicadj_ret = cum_tnicadj_ret * l`ii'.ret_tnicadj_plus1 ///
+						if l`ii'.ret_tnicadj_plus1 != .
+			
+			replace pre_months = `ii' if l`ii'.ret_indadj_plus1 != .
+				if `ii' == 1 replace pre_months = 0 if l`ii'.ret_indadj_plus1 == .
+		}
+		gen tenure = 0
+		replace cum_indadj_ret = . if pre_months <= 6 // so we don't get crazy returns
+		replace cum_tnicadj_ret = . if pre_months <= 6 // so we don't get crazy returns
+		replace cum_indadj_ret = cum_indadj_ret^(12/pre_months) - 1
+		replace cum_tnicadj_ret = cum_tnicadj_ret^(12/pre_months) - 1
+		
+		tempfile inauguration
+		save `inauguration', replace
+	restore
+	
+	merge m:1 lpermno datem tenure using `inauguration', nogen keep(1 3)
+		bys firmceo_id: ereplace cum_indadj_ret = max(cum_indadj_ret)
+		bys firmceo_id: ereplace cum_tnicadj_ret = max(cum_tnicadj_ret)
+		bys firmceo_id: ereplace pre_months = max(pre_months)
+	
+	*Idionsyncratic Volatility
+	merge m:1 datem using "FamaFrench.dta", nogen keep(1 3) keepus(mktrf smb hml)
+	reg trt1m mktrf smb hml
+		predict resid_FF3F, residuals
+	bys datem: egen idret_vol = sd(resid_FF3F)
+		lab var idret_vol "Idionsyncratic Return Volatility"
+	
+	
+	*Learning Speed
+	gen tenure_coeff = .
+	levelsof firmceo_id if firmceo_N >= 2, local(firmceo_pairs)
+	foreach firmceo of local firmceo_pairs {
+		reg idret_vol tenure if firmceo_id == `firmceo'
+			replace tenure_coeff = e(b)[1,1] if firmceo_id == `firmceo' ///
+						& idret_vol != . & tenure != .
+	}
+	replace tenure_coeff = tenure_coeff * (-1)
+		lab var tenure_coeff "Tenure Coefficienct *(-1)"
+	egen tagged = tag(firmceo_id)
+	egen learn_speed = xtile(tenure_coeff) if tagged, nq(100)
+		bys firmceo_id: ereplace learn_speed = max(learn_speed)
+			drop tagged
+		replace learn_speed = learn_speed/100
+		assert inrange(learn_speed,0,1) | learn_speed == .
+		assert firmceo_N == 1 if learn_speed == .
+		lab var learn_speed "Percentile of Firm-CEO level Tenure Coefficient (0 to 1)"
+		
+	save "Abnormal_Returns/firm_ceo_month_vars.dta", replace
+	*---------------------------------------------------------------------------
+	*Industry-Level Annual Variables (R&D, HHI, Sales Growth, New Products)
+		use gvkey announcedate using "CapitalIQ_KeyDevelopments.dta", clear
+			gen year = int(announcedate/10000)
+		joinby gvkey year using "Compustat-CRSP_Merged_Annual.dta"
+			keep gvkey year sic
+		ffind sic, newvar(ff17) type(17)
+		
+		collapse (count) ind_new_products = gvkey, by(ff17 year) fast
+			replace ind_new_products = ind_new_products/1000
+			lab var ind_new_products "New Products by Industry (Thousands)"
+		tempfile newproducts
+		save `newproducts', replace
+
+	use gvkey lpermno datadate year fyear sic at sale revt xrd ///
+		using "Compustat-CRSP_Merged_Annual.dta", clear
+	ffind sic, newvar(ff17) type(17)
+	
+	duplicates tag lpermno fyear, gen(dup)
+		drop if dup & (at == . | inlist(sale, ., 0))
+		duplicates drop lpermno fyear, force // only drops 35
+		
+	xtset lpermno fyear
+	*R&D
+	gen rd_intensity = xrd/at
+		lab var rd_intensity "R&D Expense / Sales"
+	*HHI
+	bys ff17 year: egen tot_ind_sales = total(sale)
+	gen sh_ind_sales = sale/tot_ind_sales * 100
+		lab var sh_ind_sales "Share of Industry Sales (%)"
+	gen sh_ind_sales_sq = sh_ind_sales^2
+		lab var sh_ind_sales_sq "Squared Share of Industry Sales"
+	*Sales Growth
+	xtset lpermno fyear
+	gen salesgr = (f.sale - sale)/sale*100
+		lab var salesgr "Sales Growth, (t to t+1) (%)"
+		
+	*--------
+	collapse (mean) ind_rd = rd_intensity ind_salesgr = salesgr ///
+			 (sum) ind_hhi = sh_ind_sales_sq, by(ff17 year) fast
+	lab var ind_rd "Industry (FF17) Avg R&D Intensity (R&D/Assets)"
+	lab var ind_salesgr "Industry (FF17) Avg Sales Growth (t to t+1) (%)"
+	lab var ind_hhi "Industry (FF17) HHI"
+	*--------
+	
+	*New Products
+	merge 1:1 ff17 year using `newproducts', nogen
+	
+	rangestat (mean) ind_rd_3yr = ind_rd ind_salesgr_3yr = ind_salesgr ///
+			ind_hhi_3yr = ind_hhi ind_new_products_3yr = ind_new_products, ///
+			interval(year -2 0) by(ff17)
+			
+	lab var ind_rd_3yr "3-Year Industry (FF17) Avg R&D Intensity (R&D/Assets)"
+	lab var ind_salesgr_3yr "3-Year Industry (FF17) Avg Sales Growth (t to t+1) (%)"
+	lab var ind_hhi_3yr "3-Year Industry (FF17) Avg HHI"
+	lab var ind_new_products_3yr "3-Year Avg New Products by Industry (Thousands)"
+	
+	save "Abnormal_Returns/firm_cyear_ind_vars.dta", replace
+	
+
+} // end volatility section
+*=======================================================================
+* MATERIAL WEAKNESS & TIMELY LOSS RECOGNITION
+*=======================================================================
+if `mw_and_tlr' == 1 {
+    use lpermno gvkey fyear year sic ///
+		csho prcc_f ib fca rcp sale aqc using "Compustat-CRSP_Merged_Annual.dta", clear
+	duplicates drop
+	duplicates tag lpermno fyear, gen(dup)
+		drop if dup & (inlist(sale, 0, .) | csho == .)
+		duplicates drop lpermno fyear dup, force
+	ffind sic, newvar(ff17) type(17)
+	
+	xtset lpermno fyear 
+	gen mktcap = csho*prcc_f
+		lab var mktcap "Market Capitalization ($ MM)"
+	gen ln_mktcap = ln(mktcap) // log of mktcap in millions
+		lab var ln_mktcap "Log of Market Cap (in millions pre-log)"
+	bys lpermno: egen min_fy = min(fyear)
+		gen firm_age = fyear - min_fy + 1
+			lab var firm_age "Number of years in CRSP"
+	gen agg_loss = (l.ib + ib) < 0
+		lab var agg_loss "Aggregate Loss (1 if Income t and t-1 sum to less than 0)"
+	gen foreign_transact = !inlist(fca, 0, .)
+		lab var foreign_transact "Foreign Currency Adjustments != {0, .}"
+	gen acquisition_val = aqc/mktcap
+		lab var acquisition_val "Acquisitions scaled by Market Cap"
+	gen salesgr = sale/l.sale - 1
+		bys ff17 fyear: egen salesgr_indmed = median(salesgr)
+			gen salesgr_indadj = salesgr-salesgr_indmed
+			egen salesgr_indadj_pct = xtile(salesgr_indadj), nq(5) by(fyear)
+		merge m:1 gvkey fyear using "Abnormal_Returns/tnic_ind_vars.dta", nogen keep(1 3) keepus(salesgr_tnicmed)
+			gen salesgr_tnicadj = salesgr-salesgr_tnicmed
+			egen salesgr_tnicadj_pct = xtile(salesgr_tnicadj), nq(5) by(fyear)
+	gen extr_salesgr_ind = salesgr_indadj_pct == 5
+		lab var extr_salesgr_ind "Extreme Sales Growth (1 if top quintile of ind-adj salesgr)"
+	gen extr_salesgr_tnic = salesgr_tnicadj_pct == 5
+		lab var extr_salesgr_tnic "Extreme Sales Growth (1 if top quintile of TNIC-adj salesgr)"
+		
+	xtset lpermno fyear
+	gen restructuring = (-1)*l.rcp/mktcap
+		lab var restructuring "Restructuring Costs scaled by Market Cap"
+	preserve
+		use lpermno datadate snms using "Compustat-CRSP_Merged_HSegments.dta", clear
+		egen seg_id = group(lpermno snms)
+		gen fyear = int(datadate/10000) + 1
+			drop datadate
+			duplicates drop
+			isid seg_id fyear
+		collapse (count) n_segs = seg_id, by(lpermno fyear)
+		tempfile segments
+		save `segments', replace
+	restore
+	merge 1:1 lpermno fyear using `segments', nogen keep(1 3)
+		gen ln_segs = ln(n_segs)
+	
+	#delimit ;
+	gen ln_mw = -2.182 /* using estimates from Doyle et al. 2007, p. 211 model 1 */
+				-0.080 * ln_mktcap
+				-0.136 * firm_age
+				+0.438 * agg_loss
+				+0.161 * ln(1.879) /* Subbing in the log of mean SPEs */
+				+0.269 * ln_segs
+				+0.311 * foreign_transact
+				+0.763 * acquisition_val
+				+0.227 * extr_salesgr_ind
+				+1.184 * restructuring;
+	#delimit cr
+	
+	save "Abnormal_Returns/mat_weakness_fitted.dta", replace
+
+*-----------------------------------------------------------------------
+	use gvkey lpermno datadate fyear sic ib using "Compustat-CRSP_Merged_Annual.dta", clear
+	merge 1:1 gvkey lpermno datadate using "Compustat-CRSP_Merged_Monthly.dta", ///
+			keepus(trt1m) keep(2 3)
+	gen year = int(datadate/10000)
+	gen month = mod(int(datadate/100), 100)
+	gen datem = ym(year, month)
+		format %tm datem
+		
+	* Timely Loss Recognition based on Francis & Martin 2010
+	xtset lpermno datem
+	gen ret_L9_F2 = (1 + trt1m)
+		gen n_months = 1
+		forval ii = 1/9 {
+			replace  ret_L9_F2 =  ret_L9_F2*(1 + l`ii'.trt1m) ///
+						if l`ii'.trt1m != .
+			replace n_months = n_months + 1 if l`ii'.trt1m != .
+		}
+		forval ii = 1/2 {
+		    replace  ret_L9_F2 =  ret_L9_F2*(1 + f`ii'.trt1m) ///
+						if f`ii'.trt1m != .
+			replace n_months = n_months + 1 if f`ii'.trt1m != .
+		}
+		replace ret_L9_F2 = . if n_months < 6
+		replace ret_L9_F2 = ret_L9_F2^(12/n_months)
+			replace ret_L9_F2 = ret_L9_F2 - 1
+			lab var ret_L9_F2 "Cumulative 12-m returns starting 9 months before EoFY"
+		gen neg_ret = ret_L9_F2 < 0
+			lab var neg_ret "Negative cumulative 12-m returns"
+		gen d_X_r = neg_ret * ret_L9_F2 // interaction term from paper
+		
+	gen basu = .
+		lab var basu "Timeliness of loss recognition in earnings rel. to gains (Basu Coefficient)"
+	gen tlr_tot = .
+		lab var tlr_tot "Total timeliness of loss recognition (beta3 + beta4)"
+	
+	drop if fyear == . | ib == .
+	bys lpermno: gen n_obs = _N
+	levelsof lpermno if n_obs >= 4, local(firmlist)
+	
+	foreach firm of local firmlist {
+	    reg ib neg_ret ret_L9_F2 d_X_r if lpermno == `firm'
+		replace basu = e(b)[1,3] if lpermno == `firm'
+		replace tlr_tot = e(b)[1,3] + e(b)[1,2] if lpermno == `firm'
+	}
+	save "Abnormal_Returns/timely_loss_recognition.dta", replace
+	
+} // end mw_and_tlr section
+*=======================================================================
+
+*=======================================================================
+* COMPUTE FIRM- AND INDUSTRY-LEVEL COMPOUNDED RETURNS & GROWTH RATES
+*=======================================================================
 if `growth' == 1 {
 *-------------------
 	use permno date year retA ///
@@ -351,28 +889,21 @@ if `growth' == 1 {
 		destring month, replace
 
 	merge 1:1 lpermno year month using "Compustat-CRSP_Merged_Annual.dta", ///
-		keepus(sic aqc capx revt xsga do csho prcc_c) nogen keep(3)
+		keepus(sic fyear aqc capx revt xsga do csho prcc_c) nogen keep(3)
 
-	sort lpermno year month // sometimes more than one ob per firm-year
-		collapse (last) retA sic aqc capx revt xsga do csho prcc_c, by(lpermno year) fast
+	sort lpermno fyear month // sometimes more than one ob per firm-year
+		collapse (last) retA sic aqc capx revt xsga do csho prcc_c, by(lpermno fyear) fast
 
+		drop if fyear == .
+		
 	gen mktcap = prcc_c*csho
 		lab var mktcap "Market Capitalization ($ MM)"
 
-	merge m:1 sic using "FamaFrench48.dta", gen(ff_merge) keep(1 3)
-		/* Filling in SIC codes not assigned by the Fama French 48 industry document
-		based on https://www.eeoc.gov/eeoc/statistics/employment/jobpat-eeo1/siccodes.cfm */
-		* Fishing, hunting, trapping
-		replace ff48 = 6 if ff48 == . & sic == 900
-			replace ff48_name = "Recreation" if ff48 == 6 & ff48_name == ""
-		* Miscellaneous Manufactures, Unknown
-		replace ff48 = 48 if ff48 == . & inlist(sic, 3990, 6797, 9995, 9997)
-			replace ff48_name = "Other" if ff48 == 48 & ff48_name == ""
-		assert ff48 != .
+	ffind sic, newvar(ff48) type(48)
 
-	bys ff48 year: egen ind_mktcap_tot = total(mktcap)
+	bys ff48 fyear: egen ind_mktcap_tot = total(mktcap)
 		gen wt = mktcap/ind_mktcap_tot
-			bys ff48 year: egen check = total(wt) // just making sure the weights add to 1
+			bys ff48 fyear: egen check = total(wt) // just making sure the weights add to 1
 			assert inrange(check, 0.999, 1.001)
 			drop check
 
@@ -380,13 +911,13 @@ if `growth' == 1 {
 		if !inlist("`var'", "retA", "revt") replace `var' = 0 if `var' == .
 		gen `var'_wtd = `var'*wt
 			lab var `var'_wtd "`var' weighted by market cap share of industry"
-		bys ff48 year: egen ind_vw_`var' = total(`var'_wtd)
+		bys ff48 fyear: egen ind_vw_`var' = total(`var'_wtd)
 			lab var ind_vw_`var' "Industry value-weighted `var'"
-		bys ff48 year: egen ind_m_`var' = median(`var')
+		bys ff48 fyear: egen ind_m_`var' = median(`var')
 			lab var ind_m_`var' "Industry median `var'"
 	}
 
-	xtset lpermno year
+	xtset lpermno fyear
 
 	* --- Returns --- *
 	gen firm_ret0 = retA
@@ -411,31 +942,31 @@ if `growth' == 1 {
 		lab var firm_rev_g0 "Revenue growth from last year to now"
 	gen ind_vw_rev_g0 = ind_vw_revt/L.ind_vw_revt
 		lab var ind_vw_rev_g0 "Industry value-weighted revenue growth from last year to now"
-	bys ff48 year: egen ind_m_rev_g0 = median(firm_rev_g0)
+	bys ff48 fyear: egen ind_m_rev_g0 = median(firm_rev_g0)
 		lab var ind_m_rev_g0 "Industry median revenue growth from last year to now"
 
 	forval i = 1/10 {
 		local i_1 = `i' - 1
 		
-		sort lpermno year
+		sort lpermno fyear
 		gen firm_rev_g`i' = F`i'.revt/L.revt
 			lab var firm_rev_g`i' "Revenue growth from last year to `i' year(s) from now"
 
 		gen ind_vw_rev_g`i' = F`i'.ind_vw_revt/L.ind_vw_revt
 			lab var ind_vw_rev_g`i' "Industry value-weighted revenue growth from last year to `i' year(s) from now"
 
-		bys ff48 year: egen ind_m_rev_g`i' = median(firm_rev_g`i')
+		bys ff48 fyear: egen ind_m_rev_g`i' = median(firm_rev_g`i')
 			lab var ind_m_rev_g`i' "Industry median revenue growth from last year to `i' year(s) from now"
 	}
 
 	* --- Forward Sums for Forward-Looking Ratios --- *
-	sort lpermno year
+	sort lpermno fyear
 	forval i = 0/10 {
 		local i_1 = `i' - 1
 		foreach pref in "" "ind_vw_" "ind_m_" {
 			rangestat (sum) `pref'capx_fsum`i' = `pref'capx `pref'xsga_fsum`i' = `pref'xsga ///
 							`pref'aqc_fsum`i' = `pref'aqc  	`pref'do_fsum`i' = `pref'do ///
-							`pref'revt_fsum`i' = `pref'revt, interval(year 0 `i') by(lpermno)
+							`pref'revt_fsum`i' = `pref'revt, interval(fyear 0 `i') by(lpermno)
 			foreach var in capx xsga aqc do revt { // set missing if missing a year in the interval
 				if `i' > 0 ///
 					replace `pref'`var'_fsum`i' = . ///
@@ -478,7 +1009,7 @@ if `growth' == 1 {
 	}
 
 	#delimit ;
-	order lpermno year
+	order lpermno fyear
 		  firm_ret? firm_ret?? ind_vw_ret? ind_vw_ret??
 		  firm_rev_g? firm_rev_g?? ind_vw_rev_g? ind_vw_rev_g?? ind_m_rev_g? ind_m_rev_g??
 		  firm_capxsga_rev? firm_capxsga_rev?? ind_vw_capxsga_rev? ind_vw_capxsga_rev?? ind_m_capxsga_rev? ind_m_capxsga_rev??
@@ -493,70 +1024,27 @@ if `growth' == 1 {
 *=======================================================================
 
 *======================================================================
-* COMPUTE FIRM- AND INDUSTRY-LEVEL COMPOUNDED RETURNS & GROWTH RATES
-*======================================================================
-if `portfolio' == 1 {
-*-------------------
-	use "Abnormal_Returns/portfolio years.dta", clear
-		bys gvkey: gen group = _n
-		reshape long year, i(gvkey group) j(j) string
-		egen id = group(gvkey group)
-		xtset id year
-		tsfill
-			bys id (year): ereplace gvkey = mode(gvkey)
-			keep gvkey year
-			duplicates drop
-		destring gvkey, replace
-		tempfile pf_years
-		save `pf_years', replace
-
-	use permno year retA month max_mon ///
-		using "Abnormal_Returns/returns_annualized.dta", clear
-	ren permno lpermno
-	keep if month == max_mon
-	merge 1:1 lpermno year month using "Compustat-CRSP_Merged_Annual.dta", ///
-		nogen keep(3) keepus(gvkey csho prcc_c)
-	
-	merge m:1 gvkey year using `pf_years', keep(2 3)
-		gen firms_in_portfolio = _merge == 3
-		gen not_merged = _merge == 2
-	gen mktcap = csho*prcc_c
-		lab var mktcap "Market Capitalization ($ MM)"
-
-	bys year: egen tot_mktcap = total(mktcap)
-	gen wt = mktcap/tot_mktcap
-		bys year: egen check = total(wt)
-		assert inrange(check, 0.999, 1.001) if _merge == 3
-	gen retA_vw = retA * wt
-
-	collapse (mean) retA_eqw = retA (sum) retA_vw ///
-			 (sum) firms_in_portfolio not_merged, by(year) fast
-
-	save "portfolio_subset_returns.dta", replace
-
-} // end portfolio section
-*=======================================================================
-
-*======================================================================
 * NOW COMPUTE CASH FLOW-INVESTMENT SENSITIVITY & OVER/UNDER-INVESTMENT
 * (see Biddle & Hilary 2006)
 *======================================================================
 if `cfsi' == 1 {
 *-------------------
-	use lpermno sic year month ///
+	use lpermno sic fyear year month ///
 		revt capx ib dp ppent xrd capx aqc aoloch lt at ch sale ///
 	  using "Compustat-CRSP_Merged_Annual.dta", clear
 	
-	duplicates tag lpermno year, gen(dup)
-	bys lpermno year: egen dup_himon = max(month) if dup
+	duplicates tag lpermno fyear, gen(dup)
+	bys lpermno fyear: egen dup_himon = max(month) if dup
 	drop if dup & month < dup_himon
-	drop dup dup_himon
+	drop dup dup_himon month
 
 	foreach var of varlist xrd aoloch aqc {
 		replace `var' = 0 if `var' == .
 	}
+	
+	ffind sic, newvar(ff17) type(17)
 
-	xtset lpermno year
+	xtset lpermno fyear
 	gen cf_K = (ib+dp)/l.ppent
 		lab var cf_K "Cash Flow divided by Beg-of-Pd Net Capital"
 		replace cf_K = 0 if cf_K < 0 // see Biddle & Hilary p. 979
@@ -571,24 +1059,82 @@ if `cfsi' == 1 {
 
 	forval yr = 1975/2018 {
 		local yr_10 = `yr' - 10
-		bys lpermno: egen cf_past10 = total(cf_K) if inrange(year, `yr_10', `yr')
+		bys lpermno: egen cf_past10 = total(cf_K) if inrange(fyear, `yr_10', `yr')
 		gen inv_wtd = inv_K*cf_K/cf_past10
-		bys lpermno: egen cfwai_temp = total(inv_wtd) if inrange(year, `yr_10', `yr')
-		replace cfwai = cfwai_temp if year == `yr'
+		bys lpermno: egen cfwai_temp = total(inv_wtd) if inrange(fyear, `yr_10', `yr')
+		replace cfwai = cfwai_temp if fyear == `yr'
 
-		xtile cash_xt = ch if year == `yr', n(10)
-			replace cash_rank = cash_xt if year == `yr'
-		xtile lev_xt = lev if year == `yr', n(10)
-			replace lev_rank = lev_xt if year == `yr'
+		xtile cash_xt = ch if fyear == `yr', n(10)
+			replace cash_rank = cash_xt if fyear == `yr'
+		xtile lev_xt = lev if fyear == `yr', n(10)
+			replace lev_rank = lev_xt if fyear == `yr'
 
 		drop cf_past10 inv_wtd cfwai_temp cash_xt lev_xt
 	}
 
-	rangestat (mean) ai = inv, i(year -10 0) by(lpermno)
+	rangestat (mean) ai = inv, i(fyear -10 0) by(lpermno)
 
 	gen cfsi = cfwai - ai if !inlist(cfwai, 0, .)
 		lab var cfsi "Cash Flow Sensitivity to Investment"
+		
+	preserve // ----- INVESTMENT-Q SENSITIVITY BY FIRM YEAR --------------------
+		merge 1:1 lpermno fyear using "Abnormal_Returns/firm_year_performance.dta", ///
+			nogen keepus(at_p75)
+			
+		ren fyear fyearq
+		merge 1:m lpermno fyearq using "Compustat-CRSP_Merged_Quarterly.dta", nogen ///
+				keepus(cshoq capxy ppentq atq ltq fqtr datadate)
+		ren fyearq fyear
+			gen datefq = yq(fyear, fqtr)
+				format %tq datefq
+			drop if datefq == .
+			duplicates drop lpermno datefq, force
+		xtset lpermno datefq
+			gen capxq = capxy if fqtr == 1
+				replace capxq = capxy - l.capxy if fqtr > 1
+				
+		duplicates tag lpermno datadate, gen(dup)
+		bys lpermno datadate: egen dup_hiq = max(datefq)
+			drop if dup & datefq < dup_hiq
+			drop dup dup_hiq
+		merge 1:m lpermno datadate using "Compustat-CRSP_Merged_Monthly.dta", nogen ///
+				keepus(prccm) keep(1 3)
+		
+		gen mktcapq = cshoq * prccm
+			lab var mktcap "Mkt. Cap. (Mkt. Val of Eq) (Quarterly)"
+		gen bk_eqq = atq-ltq
+			lab var bk_eqq "Book Val of Eq (Quarterly)"
+		xtset lpermno datefq
+		gen inv_Kq = capxq/l.ppentq
+			lab var inv_K "Capex divided by Beg-of-Pd Net Capital (Quarterly)"
+			
+		bys ff17 datefq: egen ind_mktcapq = total(mktcapq) if at_p75
+			bys ff17 datefq: ereplace ind_mktcapq = max(ind_mktcapq)
+		bys ff17 datefq: egen ind_bkq = total(bk_eqq) if at_p75
+			bys ff17 datefq: ereplace ind_bkq = max(ind_bkq)
+		gen ind_mtbq_atp75 = ind_mktcapq/ind_bkq
+		
+		save "Abnormal_Returns/firm_qtr_inv_mtb.dta", replace
+			
+		levelsof lpermno if inv_Kq != . & ind_mtbq_atp75 != ., local(firms)
+		gen invqs = .
+		foreach lp of local firms {
+			levelsof fyear if lpermno == `lp', local(years)
+			foreach fy of local years {
+				cap noisily reg inv_Kq ind_mtbq_atp75 if lpermno == `lp' & fyear == `fy'
+				replace invqs = e(b)[1,1] if lpermno == `lp' & fyear == `fy'
+			}
+		}
+		
+		
+		collapse (last) invqs, by(lpermno fyear)
+		
+		tempfile inv_Q_sensitivity
+		save `inv_Q_sensitivity', replace
+	restore
 
+	merge 1:1 lpermno fyear using `inv_Q_sensitivity', nogen keep(1 3) 
+	
 	*-------------------------------------------------------------------
 	* Biddle, Hilary, Verdi: investment vars & over-investment measures
 	*-------------------------------------------------------------------
@@ -604,16 +1150,8 @@ if `cfsi' == 1 {
 	gen overfirm = (cash_rank + lev_rank)/2
 
 	// Industry-Level
-	merge m:1 sic using "FamaFrench48.dta", gen(ff_merge) keep(1 3)
-		/* Filling in SIC codes not assigned by the Fama French 48 industry document
-		based on https://www.eeoc.gov/eeoc/statistics/employment/jobpat-eeo1/siccodes.cfm */
-		* Fishing, hunting, trapping
-		replace ff48 = 6 if ff48 == . & sic == 900
-			replace ff48_name = "Recreation" if ff48 == 6 & ff48_name == ""
-		* Miscellaneous Manufactures, Unknown
-		replace ff48 = 48 if ff48 == . & inlist(sic, 3990, 6797, 9995, 9997)
-			replace ff48_name = "Other" if ff48 == 48 & ff48_name == ""
-		assert ff48 != .
+	ffind sic, newvar(ff48) type(48)
+	
 	preserve
 		#delimit ;
 		collapse (sum) invBHV_ind = invBHV
@@ -669,16 +1207,17 @@ if `cfsi' == 1 {
 	*-------------------------------------------------------------------
 	* Cumulative Average Revenue
 	*-------------------------------------------------------------------
-	keep if year >= 1975
-		rangestat (mean) cum_avg_rev = revt, i(year . 0) by(lpermno)
+	keep if fyear >= 1975
+		rangestat (mean) cum_avg_rev = revt, i(fyear . 0) by(lpermno)
 
 	*-------------------------------------------------------------------
-	keep lpermno year cfsi cum_avg_rev overfirm overind overagg
+	keep lpermno fyear cfsi invqs cum_avg_rev overfirm overind overagg
 		lab var cum_avg_rev "Cumulative Avg Revenue"
+		lab var invqs "Inv.-Q Sensitivity - Coefficient from reg Inv/K on MTB by Firm & Yr."
 		lab var overfirm "Firm propensity to over-invest"
 		lab var overind "Industry propensity to over-invest"
 		lab var overagg "Economy-wide propensity to over-invest"
-	save "investment_efficiency_measures.dta", replace
+	save "Abnormal_Returns/investment_efficiency_measures.dta", replace
 
 } // end cash flow-investment sensitivity section
 *=======================================================================
@@ -703,16 +1242,8 @@ if `rem' == 1 {
 		replace `var' = 0 if `var' == .
 	}
 
-	merge m:1 sic using "FamaFrench48.dta", gen(ff_merge) keep(1 3)
-		/* Filling in SIC codes not assigned by the Fama French 48 industry document
-		based on https://www.eeoc.gov/eeoc/statistics/employment/jobpat-eeo1/siccodes.cfm */
-		* Fishing, hunting, trapping
-		replace ff48 = 6 if ff48 == . & sic == 900
-			replace ff48_name = "Recreation" if ff48 == 6 & ff48_name == ""
-		* Miscellaneous Manufactures, Unknown
-		replace ff48 = 48 if ff48 == . & inlist(sic, 3990, 6797, 9995, 9997)
-			replace ff48_name = "Other" if ff48 == 48 & ff48_name == ""
-		assert ff48 != .
+	ffind sic, newvar(ff48) type(48)
+	
 	xtset lpermno year
 
 	gen dsale = sale - l.sale
@@ -750,9 +1281,391 @@ if `rem' == 1 {
 	gen rm_proxy = r_cfo + r_prod + r_disx
 
 	keep lpermno year r_cfo r_prod r_disx rm_proxy
-	save "real_earnings_management_measures.dta", replace
+	save "Abnormal_Returns/real_earnings_management_measures.dta", replace
 
 
 
 } // end real earnings management section
+*=======================================================================
+
+*=======================================================================
+* COMPUTE BETAS
+*=======================================================================
+if `betas' == 1 {
+*------------------
+use lpermno fyear datadate using "Compustat-CRSP_Merged_Annual.dta", clear
+
+preserve
+	use date vwretd using crsp, clear
+	ren date datadate
+	duplicates drop
+	isid datadate
+	tempfile vwretd
+	save `vwretd', replace
+restore
+
+merge 1:1 lpermno datadate using "Compustat-CRSP_Merged_Monthly.dta", ///
+	keep(2 3) keepus(trt1m)
+merge m:1 datadate using `vwretd', nogen keep(1 3)
+gen datem = ym(int(datadate/10000),mod(int(datadate/100),100))
+	format %tm datem
+merge m:1 datem using "FamaFrench.dta", nogen keep(1 3) keepus(mktrf)
+
+levelsof lpermno, local(firms)
+
+gen beta = .
+foreach lp of local firms {
+	levelsof fyear if lpermno == `lp', local(sample_years)
+	foreach fyr of local sample_years {
+		local l5_fyr = `fyr' - 5
+		cap noisily reg trt1m mktrf if lpermno == `lp' & inrange(fyear, `l5_fyr', `fyr')
+		replace beta = e(b)[1,1] if lpermno == `lp' & fyear == `fyr'
+	}
+}
+drop if _merge == 2
+
+save "Abnormal_Returns/firm_year_betas.dta", replace
+
+} // end betas section
+*=======================================================================
+
+*=======================================================================
+* ADD PATENT VARIABLES
+*=======================================================================
+if `patents' == 1 {
+*-------------------
+import delimited "KPSS_2019_public/KPSS_2019_public.csv", clear varn(1)
+ren permno lpermno
+gen year = substr(issue_date, -4, 4)
+	destring year, replace
+
+#delimit ;
+collapse (count) n_patents = patent_num 
+		 (sum) patent_cites = cites
+				patent_val_real = xi_real patent_val_nom = xi_nominal, 
+		by(lpermno year);
+#delimit cr
+		
+lab var n_patents "Number of Patents"
+lab var patent_cites "Total Patent Forward Citations"
+lab var patent_val_nom "Total Nominal Value of Innovations ($ Millions)"
+lab var patent_val_real "Total Real Value of Innovations (Millions of 1982 $s, CPI)"
+		
+save "Abnormal_Returns/firm_year_patents.dta", replace
+
+} // end patents section
+*=======================================================================
+
+*=======================================================================
+* COMPUTE OVERCONFIDENCE METRICS FROM
+* 	MALMENDIER & TATE 2005: CEO OVERCONFIDENCE & CORPORATE INVESTMENT
+*=======================================================================
+if `overconfidence' == 1 {
+*-------------------
+* Net Buyer
+use  "Execucomp_AnnComp.dta", clear
+	drop if exec_fullname == ""
+	isid co_per_rol fyear
+	
+	gen becameceo_yr = int(becameceo/10000)
+		replace becameceo_yr = 1992 if becameceo_yr <1992
+	gen tenure = fyear - becameceo_yr
+		keep if tenure >= 0
+	bys co_per_rol: egen yrs_stayed = max(tenure)
+
+	xtset co_per_rol fyear
+	gen buy_yr = shrown_excl_opts_pct > l.shrown_excl_opts_pct ///
+					if inrange(tenure,1,5) & shrown_excl_opts_pct != .
+		replace buy_yr = 0 if buy_yr == .
+	bys co_per_rol: egen years_net_buy = total(buy_yr)
+	gen net_buyer = years_net_buy >= 3 if yrs_stayed >= 10
+	collapse (last) net_buyer, by(exec_fullname gvkey fyear)
+	
+	save "Abnormal_Returns/firm_ceo_netbuyers.dta", replace
+	
+* Longholder
+use "gvkey_fyear_bydatem.dta", clear
+	ren datem exp_datem
+	ren fyear exp_fyear
+	tempfile exp_datem_fyear
+	save `exp_datem_fyear', replace
+use "Execucomp_Options.dta", clear
+	gen exp_datem = ym(int(exdate/10000), mod(int(exdate/100), 100))
+		format exp_datem %tm
+	merge m:1 gvkey exp_datem using `exp_datem_fyear', nogen keep(1 3)
+	br if fyear == exp_fyear
+	gen longholder = fyear == exp_fyear
+	collapse (max) longholder, by(exec_fullname gvkey)
+
+	save "Abnormal_Returns/firm_ceo_longholders.dta", replace
+	
+* Holder67
+
+
+	
+} // end overconfidence section
+*=======================================================================
+
+*=======================================================================
+* COMPUTE INDEPENDENT DIRECTOR TURNOVER
+*=======================================================================
+if `ind_dir_to' == 1 {
+*-------------------
+use cik directorname rolename yearstart yearend dateendrole ///
+		using "Abnormal_Returns/boardex_person-firm.dta", clear
+	drop if cik == .
+	gen independent = strpos(rolename, "Independent") > 0
+	keep if independent
+	
+	gen n_expand = yearend - yearstart + 1 if yearend != .
+	replace n_expand = 2020 - yearstart + 1 if yearend == . & dateendrole == "C"
+		drop if n_expand == .
+	drop dateendrole
+	duplicates drop
+	
+	expand n_expand
+
+	bys cik directorname yearstart yearend: gen fyear = yearstart - 1 + _n
+	duplicates drop cik directorname fyear, force
+	bys cik directorname: egen last_year = max(fyear)
+		gen turnover = fyear == last_year
+
+	collapse (sum) ind_dirs = independent turnovers = turnover, by(cik fyear)
+	bys cik (fyear): drop if _n == _N // last year turnover = 100%
+
+	save "Abnormal_Returns/cik_ind_dir_turnover.dta", replace
+	
+} // end independent director turnover section
+*=======================================================================
+
+*=======================================================================
+* COMPUTE MISCELLANEOUS METRICS
+*=======================================================================
+if `misc' == 1 {
+*-------------------
+use lpermno gvkey sic fyear datadate ///
+	at revt sale cogs dlc dltt lt ppent ppegt emp ///
+	using "Compustat-CRSP_Merged_Annual.dta", clear
+	
+duplicates tag lpermno fyear, gen(dup)
+drop if dup & (at == . | revt == .)
+drop dup
+duplicates tag lpermno fyear, gen(dup)
+bys lpermno fyear (datadate): drop if _n == 2
+drop dup gvkey
+
+ffind sic, newvar(ff17) type(17)
+
+xtset lpermno fyear
+gen ln_at = ln(at)
+	lab var ln_at "Log of Total Assets (in Millions)"
+gen revt_avgassets = revt/(0.5*at + 0.5*l.at)
+	lab var revt_avgassets "Total Revenue / Avg. Tot. Assets"
+gen debt_avgassets = (dlc+dltt)/(0.5*at + 0.5*l.at)
+	lab var debt_avgassets "(Debt in Current Liabilities + LTD) / Avg. Tot. Assets"
+gen bk_eq = at-lt
+	lab var bk_eq "Book Value of Equity"
+bys lpermno: egen min_year = min(fyear)
+gen firm_age = fyear - min_year + 1
+	lab var firm_age "Number of Years in Compustat-CRSP"
+gen ln_emp = ln(emp)
+	lab var ln_emp "Log of Number of Employees (in Thousands)"
+gen accdep_ppeg = (ppegt-ppent)/ppegt
+	lab var accdep_ppeg "Ratio of Accumulated Depreciation to Gross PPE"
+gen gpm = (sale-cogs)/sale
+	lab var gpm "Gross Profit Margin (decimal)"
+
+preserve
+	use date vwretd using crsp, clear
+	ren date datadate
+	duplicates drop
+	isid datadate
+	tempfile vwretd
+	save `vwretd', replace
+restore
+
+merge 1:1 lpermno datadate using "Compustat-CRSP_Merged_Monthly.dta", ///
+	keep(2 3) keepus(trt1m)
+merge m:1 datadate using `vwretd', nogen keep(1 3)
+gen datem = ym(int(datadate/10000),mod(int(datadate/100),100))
+	format %tm datem
+merge m:1 datem using "FamaFrench.dta", nogen keep(1 3) keepus(mktrf)
+
+
+rangestat (sd) sd_trt1m = trt1m, i(datem -11 0) by(lpermno)
+gen ret_fyear = (1+trt1m) if fyear != .
+
+xtset lpermno datem
+gen vwretd_fyear = (vwretd + 1) if fyear != .
+	replace vwretd_fyear = 1 if vwretd_fyear == . & fyear != .
+	forval i = 1/11 {
+		replace ret_fyear = ret_fyear * (1 + l`i'.trt1m) if l`i'.trt1m != .
+		replace vwretd_fyear = vwretd_fyear * (1 + l`i'.vwretd) if l`i'.vwretd != .
+	}
+replace ret_fyear = ret_fyear - 1
+replace vwretd_fyear = vwretd_fyear - 1
+gen ret_fyear_mktadj = ret_fyear - vwretd_fyear
+	lab var ret_fyear_mktadj "Market-Adjusted (vwretd) Return over Fiscal Year"
+
+
+drop if _merge == 2
+
+merge m:1 lpermno fyear using "Abnormal_Returns/firm_year_performance.dta", ///
+		nogen keepus(rnoa at_p75 m_excomp) keep(1 3)
+
+foreach if_group in "" "_atp75" "_execucomp" {
+	gen resid_rnoa`if_group' = .
+	
+	levelsof fyear, local(sample_years)
+	forval ind = 1/17 {
+		foreach fyr of local sample_years {
+				
+			if "`if_group'" == "" ///
+				local if_st "if ff17 == `ind' & fyear == `fyr'"
+			if "`if_group'" == "_atp75" ///
+				local if_st "if ff17 == `ind' & fyear == `fyr' & at_p75"
+			if "`if_group'" == "_execucomp" ///
+				local if_st "if ff17 == `ind' & fyear == `fyr' & m_excomp == 3"
+			
+			preserve
+				keep `if_st'
+				local N = _N
+			restore
+			if `N' > 5 {
+				cap noisily reg rnoa ln_at firm_age ln_emp accdep_ppeg ///
+								`if_st'
+				predict resids, residuals
+				replace resid_rnoa`if_group' = resids `if_st'
+				drop resids
+				br if e(sample)
+				pause
+			} // if N > 5
+		} // fyear loop
+	} // industry loop
+} // "if group" loop
+
+lab var resid_rnoa "Resid from reg RNOA on firm characteristics (All firms)"
+lab var resid_rnoa_atp75 "Resid from reg RNOA on firm characteristics (Biggest firms)"
+lab var resid_rnoa_execucomp ///
+			"Resid from reg RNOA on firm characteristics (Execucomp firms)"
+
+save "Abnormal_Returns/firm_year_miscellaneous.dta", replace
+
+
+} // end miscellaneous section
+*=======================================================================
+
+*#######################################################################
+* MERGE ALL FIRM-YEAR VARIABLES DATASETS TO ONE
+if `merge_vars' == 1 {
+*#######################################################################
+use lpermno gvkey fyear date sic ME BEtoME OP ///
+		using "Abnormal_Returns/returns_annualized_wME_BM_OP.dta", clear
+ffind sic, newvar(ff17) type(17)
+ffind sic, newvar(ff48) type(48)
+destring date, replace
+gen year = int(date/10000)
+drop date
+	merge 1:1 lpermno fyear using "Abnormal_Returns/returns_annualized_wFF_portfolios.dta", ///
+		nogen keepus(ME_pct BM_pct OP_pct pf_*)
+	merge 1:1 lpermno fyear using "Abnormal_Returns/firm_year_sds_and_skewness.dta", nogen keep(1 3)
+	ren lpermno permno
+	merge 1:1 permno year using "Abnormal_Returns/firm_year_alphas", nogen ///
+		keepus(*M1* *M3* *M4* *M5*) keep(1 3)
+	ren permno lpermno
+	merge 1:1 lpermno fyear using "Abnormal_Returns/firm_year_performance.dta", nogen ///
+		keepus (roa* roe* oiadp rnoa* dF_rnoa* dL_rnoa* revgr* omadp* ato* ///
+					ombdp* earngr* cfogr* at_p75 m_excomp)
+	merge 1:1 lpermno fyear using "Abnormal_Returns/mat_weakness_fitted.dta", nogen ///
+		keepus(ln_mw)
+	merge 1:1 lpermno fyear using "Abnormal_Returns/firm_year_growth_and_compounded_rets.dta", ///
+		nogen keepus(*ret* *rev_g* *capxsga_rev* *aqc_rev* *do_rev* wt mktcap)
+	merge m:1 gvkey fyear using "Abnormal_Returns/tnic_ind_vars.dta", nogen keepus(tnic_vw_* tnic_m_*)
+	merge m:1 lpermno fyear using "Abnormal_Returns/firm_year_miscellaneous.dta", ///
+		nogen keepus(at ln_at revt_avgassets debt_avgassets bk_eq gpm ///
+						sd_trt1m ret_fyear_mktadj resid_rnoa*)
+	merge m:1 lpermno fyear using "Abnormal_Returns/firm_year_betas.dta", nogen
+	merge m:1 gvkey fyear using "Abnormal_Returns/firm_new_products.dta", nogen keep(1 3)
+	merge m:1 ff17 year  using "Abnormal_Returns/firm_cyear_ind_vars.dta", nogen keepus(ind_*)
+	merge m:1 gvkey fyear using "Abnormal_Returns/tnic_ind_vars.dta", nogen ///
+		keepus(tnic_rd_avg tnic_salesgr_avg tnic_hhi tnic_new_products tnic_*_3yr)
+	merge 1:1 lpermno gvkey fyear using "Abnormal_Returns/timely_loss_recognition.dta", ///
+		nogen keep(1 3) keepus(basu tlr_tot)
+	merge 1:1 lpermno gvkey fyear using "Compustat-CRSP_Merged_Annual.dta", ///
+		nogen keep(1 3) keepus(cik)
+	merge m:1 cik fyear using "Abnormal_Returns/cik_ind_dir_turnover.dta", ///
+		nogen keep(1 3) keepus(ind_dirs turnovers)
+		gen sh_ind_dir_to = turnovers/ind_dirs
+			lab var sh_ind_dir_to "Share of Ind. Dir.s turning over in the next year"
+	merge m:1 lpermno fyear  using "Abnormal_Returns/investment_efficiency_measures.dta", ///
+		nogen keepus(cfsi invqs cum_avg_rev overfirm overind overagg)
+	merge m:1 lpermno year  using "Abnormal_Returns/real_earnings_management_measures.dta", nogen
+	merge m:1 lpermno year  using "Abnormal_Returns/firm_year_patents.dta", ///
+		nogen keepus(n_patents patent_*)
+save "Abnormal_Returns/master_firm-year_vars.dta", replace
+
+use "Abnormal_Returns/firm_qtr_perf_skew.dta", clear
+	ren fyq datefq
+	merge 1:1 lpermno datefq using "Abnormal_Returns/firm_qtr_inv_mtb.dta", nogen keepus(inv_Kq ind_mtbq_atp75)
+	ren datefq fyq
+	lab var inv_Kq "Quarterly Capex Scaled by Beg-of-Pd Net PPE"
+save "Abnormal_Returns/master_firm-qtr_vars.dta", replace
+	
+use "Abnormal_Returns/firm_ceo_month_vars.dta", clear
+	merge m:1 gvkey datem using "gvkey_fyear_bydatem.dta", nogen keep(1 3) keepus(fyear)
+	merge m:1 gvkey exec_fullname fyear using "Abnormal_Returns/firm_ceo_netbuyers.dta", nogen keep(1 3)
+	merge m:1 gvkey exec_fullname using "Abnormal_Returns/firm_ceo_longholders.dta", nogen keep(1 3)
+	ren lpermno permno
+	merge m:1 permno datem using "Abnormal_Returns/returns_annualized.dta", nogen keep(1 3)
+	merge m:1 permno datem using "Abnormal_Returns/sortino_sharpe.dta", nogen keep(1 3)
+	ren permno lpermno
+	lab var cum_indadj_ret "Cum. ind-adj monthly ret. over 12 months prior to CEO start"
+	lab var cum_tnicadj_ret "Cum. TNIC-adj monthly ret. over 12 months prior to CEO start"
+save "Abnormal_Returns/master_firm-ceo-mon_vars.dta", replace
+}
+*####################################################################### 
+
+*======================================================================
+* COMPUTE FIRM- AND INDUSTRY-LEVEL COMPOUNDED RETURNS & GROWTH RATES
+*======================================================================
+if `portfolio' == 1 {
+*-------------------
+	use "Abnormal_Returns/portfolio years.dta", clear
+		bys gvkey: gen group = _n
+		reshape long year, i(gvkey group) j(j) string
+		egen id = group(gvkey group)
+		xtset id year
+		tsfill
+			bys id (year): ereplace gvkey = mode(gvkey)
+			keep gvkey year
+			duplicates drop
+		destring gvkey, replace
+		tempfile pf_years
+		save `pf_years', replace
+
+	use permno year retA month max_mon ///
+		using "Abnormal_Returns/returns_annualized.dta", clear
+	ren permno lpermno
+	keep if month == max_mon
+	merge 1:1 lpermno year month using "Compustat-CRSP_Merged_Annual.dta", ///
+		nogen keep(3) keepus(gvkey csho prcc_c)
+	
+	merge m:1 gvkey year using `pf_years', keep(2 3)
+		gen firms_in_portfolio = _merge == 3
+		gen not_merged = _merge == 2
+	gen mktcap = csho*prcc_c
+		lab var mktcap "Market Capitalization ($ MM)"
+
+	bys year: egen tot_mktcap = total(mktcap)
+	gen wt = mktcap/tot_mktcap
+		bys year: egen check = total(wt)
+		assert inrange(check, 0.999, 1.001) if _merge == 3
+	gen retA_vw = retA * wt
+
+	collapse (mean) retA_eqw = retA (sum) retA_vw ///
+			 (sum) firms_in_portfolio not_merged, by(year) fast
+
+	save "portfolio_subset_returns.dta", replace
+
+} // end portfolio section
 *=======================================================================

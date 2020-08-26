@@ -48,7 +48,7 @@ cd "C:/Users/lmostrom/Dropbox/Abnormal_Returns/"
 
 order lpermno gvkey date year month fyear ff48 ff48_name mktcap wt
 		ret ret_cumul retA mktrfA smbA hmlA umdA ps_vwfA
-		ret_sd ret_skew niq_sd oibdpq_sd
+		ret_sd ret_skew ret_kurtosis niq_sd oibdpq_sd
 		*M1* *M3* *M4* *M5*
 		*ret* *rev_g* *capxsga_rev* *aqc_rev* *do_rev*
 		ME ME_pct BEtoME BM_pct OP OP_pct pf_*
@@ -63,6 +63,7 @@ lab var ret_cumul "Cumulative Return over this year"
 lab var wt "Weight based on market cap within industry (Fama-French 48)"
 lab var ret_sd "standard deviation of monthly firm returns over the year"
 lab var ret_skew "skewness of monthly firm returns over the year"
+lab var ret_kurtosis "kurtosis of monthly firm returns over the year"
 lab var niq_sd "standard deviation of quarterly net income over this and the past 2 years"
 lab var oibdpq_sd "standard deviation of quarterly operating income over this and the past 2 years"
 lab var r_cfo "Abnormal Cash Flows from Operations / L.Assets"
