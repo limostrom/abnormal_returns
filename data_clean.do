@@ -50,7 +50,7 @@ local rem 0
 local betas 0
 local patents 0
 local overconfidence 0
-local ind_dir_to 1
+local ind_dir_to 0
 local misc 0
 
 local merge_vars 1
@@ -720,7 +720,7 @@ if `volatility' == 1 {
 	xtset lpermno fyear
 	*R&D
 	gen rd_intensity = xrd/at
-		lab var rd_intensity "R&D Expense / Sales"
+		lab var rd_intensity "R&D Expense / Total Assets"
 	*HHI
 	bys ff17 year: egen tot_ind_sales = total(sale)
 	gen sh_ind_sales = sale/tot_ind_sales * 100
@@ -1574,16 +1574,16 @@ drop date
 		keepus(*M1* *M3* *M4* *M5*) keep(1 3)
 	ren permno lpermno
 	merge 1:1 lpermno fyear using "Abnormal_Returns/firm_year_performance.dta", nogen ///
-		keepus (roa* roe* oiadp rnoa* dF_rnoa* dL_rnoa* revgr* omadp* ato* ///
+		keepus (roa* roe* oiadp rnoa* dF_rnoa* dL_rnoa* revt revgr* omadp* ato* ///
 					ombdp* earngr* cfogr* at_p75 m_excomp)
 	merge 1:1 lpermno fyear using "Abnormal_Returns/mat_weakness_fitted.dta", nogen ///
 		keepus(ln_mw)
 	merge 1:1 lpermno fyear using "Abnormal_Returns/firm_year_growth_and_compounded_rets.dta", ///
-		nogen keepus(*ret* *rev_g* *capxsga_rev* *aqc_rev* *do_rev* wt mktcap)
+		nogen keepus(aqc *ret* *rev_g* *capxsga_rev* *aqc_rev* *do_rev* wt mktcap)
 	merge m:1 gvkey fyear using "Abnormal_Returns/tnic_ind_vars.dta", nogen keepus(tnic_vw_* tnic_m_*)
 	merge m:1 lpermno fyear using "Abnormal_Returns/firm_year_miscellaneous.dta", ///
-		nogen keepus(at ln_at revt_avgassets debt_avgassets bk_eq gpm ///
-						sd_trt1m ret_fyear_mktadj resid_rnoa*)
+		nogen keepus(at ln_at emp ln_emp firm_age revt_avgassets debt_avgassets bk_eq gpm ///
+						sd_trt1m ret_fyear_mktadj resid_rnoa* accdep_ppeg)
 	merge m:1 lpermno fyear using "Abnormal_Returns/firm_year_betas.dta", nogen
 	merge m:1 gvkey fyear using "Abnormal_Returns/firm_new_products.dta", nogen keep(1 3)
 	merge m:1 ff17 year  using "Abnormal_Returns/firm_cyear_ind_vars.dta", nogen keepus(ind_*)
@@ -1592,7 +1592,7 @@ drop date
 	merge 1:1 lpermno gvkey fyear using "Abnormal_Returns/timely_loss_recognition.dta", ///
 		nogen keep(1 3) keepus(basu tlr_tot)
 	merge 1:1 lpermno gvkey fyear using "Compustat-CRSP_Merged_Annual.dta", ///
-		nogen keep(1 3) keepus(cik)
+		nogen keep(1 3) keepus(cik xrd)
 	merge m:1 cik fyear using "Abnormal_Returns/cik_ind_dir_turnover.dta", ///
 		nogen keep(1 3) keepus(ind_dirs turnovers)
 		gen sh_ind_dir_to = turnovers/ind_dirs

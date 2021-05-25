@@ -23,7 +23,7 @@ cap cd "/export/home/dor/lmostrom/Documents/Dropbox"
 		save `exec_subset', replace
 		
 	*---- COMPUSTAT --------------------------------------------------------
-	use gvkey lpermno datadate fyear sic sale revt prcc_c csho ni oibdp oiadp ///
+	use gvkey lpermno datadate fyear tic sic sale revt prcc_c csho ni oibdp oiadp ///
 			at lt oancf rect invt aco ppent intan ao ap lco lo ///
 			aqc capx xsga do xrd ///
 			using "Compustat-CRSP_Merged_Annual.dta", clear
@@ -68,7 +68,7 @@ cap cd "/export/home/dor/lmostrom/Documents/Dropbox"
 		tempfile compustat
 		save `compustat', replace
 		
-		keep gvkey datem fyear
+		keep gvkey tic datem fyear
 		drop if fyear == .
 		duplicates drop
 		expand 12
